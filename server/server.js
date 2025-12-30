@@ -83,43 +83,65 @@ const sendNtfy = (cardId) => {
         if (err || !rows) return;
         
         const settings = rows.reduce((acc, r) => ({...acc, [r.key]: r.value}), {});
-        if (!settings.ntfy_url || !settings.ntfy_topic) return;
+        if (!settings.ntfy_url || !settings.ntfy_topic) {
+            console.log("Ntfy: Missing URL or Topic");
+            return;
+        }
 
         // 2. Get Card Image Path
         db.get(`SELECT filepath FROM cards WHERE id = ?`, [cardId], (err, card) => {
-            if (!card) return;
+            if (!card) {
+                console.log("Ntfy: Card not found for ID", cardId);
+                return;
+            }
 
             // Construct absolute path to file
             const cleanPath = card.filepath.replace('/uploads/', '');
             const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
 
             if (fs.existsSync(absPath)) {
-                if (typeof fetch !== 'function') return;
+                if (typeof fetch !== 'function') {
+                    console.error("Ntfy: Node environment missing 'fetch'");
+                    return;
+                }
 
-                // Read file into Buffer (More robust than streams for this use case)
                 try {
                     const fileBuffer = fs.readFileSync(absPath);
+                    const { size } = fs.statSync(absPath);
                     
                     // Construct URL (handle trailing slash)
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
                     const url = `${baseUrl}/${settings.ntfy_topic}`;
 
+                    console.log(`Ntfy: Sending image to ${url} (${size} bytes)`);
+
                     fetch(url, {
-                        method: 'PUT',
+                        method: 'POST', // POST is often preferred for file uploads
                         body: fileBuffer,
                         headers: {
                             'Title': 'Privy: Card Revealed!',
-                            'Message': 'Someone just revealed a card! Tap to see.',
+                            'X-Title': 'Privy: Card Revealed!', // Compatibility alias
+                            'Message': 'Someone revealed a card! Tap to view.', 
+                            'X-Message': 'Someone revealed a card! Tap to view.', // Compatibility alias
                             'Tags': 'heart,fire,camera',
+                            'X-Tags': 'heart,fire,camera',
                             'Priority': 'high',
-                            'Filename': 'reveal.jpg'
+                            'X-Priority': 'high',
+                            'Filename': 'reveal.jpg',
+                            'Content-Length': size
                         }
                     }).then(res => {
-                        if (!res.ok) console.error("Ntfy Failed:", res.status, res.statusText);
-                    }).catch(err => console.error("Ntfy Error:", err.message));
+                        if (!res.ok) {
+                            res.text().then(text => console.error(`Ntfy Failed (${res.status}): ${text}`));
+                        } else {
+                            console.log("Ntfy: Image notification sent successfully.");
+                        }
+                    }).catch(err => console.error("Ntfy Network Error:", err.message));
                 } catch (readErr) {
                     console.error("File Read Error:", readErr);
                 }
+            } else {
+                console.error("Ntfy: File does not exist at", absPath);
             }
         });
     });
