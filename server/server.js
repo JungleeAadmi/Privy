@@ -76,7 +76,7 @@ db.serialize(() => {
     )`);
 });
 
-// --- Helper: Send Ntfy Notification ---
+// --- Helper: Send Ntfy Notification with Image ---
 const sendNtfy = (cardId) => {
     // 1. Get Settings
     db.all(`SELECT * FROM settings WHERE key IN ('ntfy_url', 'ntfy_topic')`, [], (err, rows) => {
@@ -90,6 +90,8 @@ const sendNtfy = (cardId) => {
             if (!card) return;
 
             // Construct absolute path to file
+            // card.filepath is stored like "/uploads/cards/filename.jpg"
+            // We need to resolve this relative to DATA_DIR
             const cleanPath = card.filepath.replace('/uploads/', '');
             const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
 
@@ -110,6 +112,7 @@ const sendNtfy = (cardId) => {
                     body: fileStream,
                     headers: {
                         'Title': 'Privy: Card Revealed!',
+                        'Message': 'Someone just revealed a card! Tap to see.', // Header used for text when body is an image
                         'Tags': 'heart,fire,camera',
                         'Priority': 'high',
                         'Content-Length': size,
@@ -323,7 +326,7 @@ app.post('/api/cards/:id/scratch', auth, (req, res) => {
         db.run(`UPDATE cards SET scratched_count = scratched_count + 1 WHERE id = ?`, [cardId], (err) => {
             if (err) return res.status(500).json({ error: err.message });
             
-            // Trigger Notification
+            // Trigger Notification with image
             sendNtfy(cardId);
             
             res.json({ success: true });
