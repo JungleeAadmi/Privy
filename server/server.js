@@ -52,6 +52,14 @@ db.serialize(() => {
         scratched_count INTEGER DEFAULT 0
     )`);
     
+    // History Table (New)
+    db.run(`CREATE TABLE IF NOT EXISTS card_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        card_id INTEGER,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(card_id) REFERENCES cards(id)
+    )`);
+    
     // Books Table
     db.run(`CREATE TABLE IF NOT EXISTS books (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +77,9 @@ const storage = multer.diskStorage({
         cb(null, dir);
     },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + '-' + file.originalname);
+        // Sanitize filename to avoid encoding issues
+        const safeName = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
+        cb(null, Date.now() + '-' + safeName);
     }
 });
 const upload = multer({ storage });
@@ -142,10 +152,26 @@ app.post('/api/cards', auth, upload.single('file'), (req, res) => {
 });
 
 app.post('/api/cards/:id/scratch', auth, (req, res) => {
-    db.run(`UPDATE cards SET scratched_count = scratched_count + 1 WHERE id = ?`, [req.params.id], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
+    const cardId = req.params.id;
+    // Log history and increment count
+    db.serialize(() => {
+        db.run(`INSERT INTO card_history (card_id) VALUES (?)`, [cardId]);
+        db.run(`UPDATE cards SET scratched_count = scratched_count + 1 WHERE id = ?`, [cardId], (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        });
     });
+});
+
+app.get('/api/cards/:id/history', auth, (req, res) => {
+    db.all(
+        `SELECT timestamp FROM card_history WHERE card_id = ? ORDER BY timestamp DESC`, 
+        [req.params.id], 
+        (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json(rows);
+        }
+    );
 });
 
 // --- Routes: Books ---
@@ -159,7 +185,6 @@ app.get('/api/books', auth, (req, res) => {
 app.post('/api/books', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error: 'No file'});
     const filepath = `/uploads/books/${req.file.filename}`;
-    // Use filename as title for simplicity, can be edited later
     db.run(`INSERT INTO books (title, filepath) VALUES (?, ?)`, [req.file.originalname, filepath], function(err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ id: this.lastID, filepath });

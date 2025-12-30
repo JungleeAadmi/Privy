@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, EyeOff, Heart, Maximize2 } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, EyeOff, Heart, Maximize2, Clock, Calendar } from 'lucide-react';
 
 // --- Theme Colors ---
 // Primary: #800020 (Burgundy)
@@ -28,8 +28,6 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
     if (!canvas) return;
     const context = canvas.getContext('2d');
     setCtx(context);
-    
-    // Load image to ensure aspect ratio or just fill
     resetCard();
   }, [image]);
 
@@ -46,8 +44,7 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
     context.fillStyle = '#C0C0C0'; // Silver scratch color
     context.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Pattern or Texture for scratch surface (Optional aesthetics)
-    context.fillStyle = '#A9A9A9';
+    // Pattern or Texture for scratch surface
     context.font = '30px Caveat';
     context.fillStyle = '#333';
     context.textAlign = "center";
@@ -57,8 +54,9 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
   };
 
   const handleScratch = (e) => {
-    // Prevent default to stop scrolling on mobile
-    // e.preventDefault(); // Moved to event listener options or strict handler
+    // Critical: Prevent scrolling while scratching
+    if (e.cancelable) e.preventDefault(); 
+    if (e.stopPropagation) e.stopPropagation();
 
     if (isRevealed || !ctx) return;
     const canvas = canvasRef.current;
@@ -78,7 +76,7 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
 
     ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
-    ctx.arc(x, y, 25, 0, Math.PI * 2); // Increased brush size
+    ctx.arc(x, y, 30, 0, Math.PI * 2); // Increased brush size for better feel
     ctx.fill();
 
     checkReveal();
@@ -86,7 +84,6 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
 
   const checkReveal = () => {
     if (isRevealed) return;
-    // We trigger the DB count update on the first valid scratch interaction
     onScratchComplete(id);
     setIsRevealed(true); 
   };
@@ -107,6 +104,55 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
         onTouchMove={(e) => handleScratch(e)}
         onMouseDown={handleScratch}
       />
+    </div>
+  );
+};
+
+// 2. History List Component
+const HistoryList = ({ cardId, onClose }) => {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      const res = await fetch(`${API_URL}/cards/${cardId}/history`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        setHistory(await res.json());
+      }
+      setLoading(false);
+    };
+    fetchHistory();
+  }, [cardId]);
+
+  return (
+    <div className="absolute inset-0 bg-gray-900 rounded-xl p-4 overflow-y-auto animate-fadeIn z-20">
+       <div className="flex justify-between items-center mb-4 border-b border-gold/30 pb-2">
+         <h3 className="text-gold text-xl flex items-center gap-2"><Clock size={18}/> History</h3>
+         <button onClick={onClose}><X className="text-white" size={20}/></button>
+       </div>
+       {loading ? (
+         <p className="text-gray-400">Loading...</p>
+       ) : history.length === 0 ? (
+         <p className="text-gray-400 text-center mt-10">No history yet.</p>
+       ) : (
+         <ul className="space-y-3">
+           {history.map((h, i) => {
+             const date = new Date(h.timestamp);
+             return (
+               <li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm">
+                 <span className="text-white flex items-center gap-2">
+                   <Calendar size={14} className="text-burgundy"/> {date.toLocaleDateString()}
+                 </span>
+                 <span className="text-gold font-mono">
+                   {date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                 </span>
+               </li>
+             )
+           })}
+         </ul>
+       )}
     </div>
   );
 };
@@ -171,7 +217,8 @@ const Auth = ({ setUser }) => {
 const Home = () => {
   const [cards, setCards] = useState([]);
   const [hideTrigger, setHideTrigger] = useState(0);
-  const [selectedCard, setSelectedCard] = useState(null); // For Modal
+  const [selectedCard, setSelectedCard] = useState(null); 
+  const [showHistory, setShowHistory] = useState(false); // Toggle for history view
 
   useEffect(() => {
     fetchCards();
@@ -187,9 +234,6 @@ const Home = () => {
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
-
-    // Loop through all selected files and upload individually
-    // (This avoids changing backend logic)
     for (const file of files) {
       const formData = new FormData();
       formData.append('file', file);
@@ -203,13 +247,10 @@ const Home = () => {
   };
 
   const handleScratch = async (id) => {
-    // Only update server, UI updates via local logic or refresh
     await fetch(`${API_URL}/cards/${id}/scratch`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
     });
-    // We do NOT refresh cards immediately to avoid resetting the view while scratching
-    // But we update the local count for the modal display
     setCards(prev => prev.map(c => c.id === id ? {...c, scratched_count: c.scratched_count + 1} : c));
   };
 
@@ -219,6 +260,7 @@ const Home = () => {
 
   const openCard = (card) => {
     setSelectedCard(card);
+    setShowHistory(false);
   };
 
   return (
@@ -232,12 +274,11 @@ const Home = () => {
         <label className="flex items-center gap-2 bg-burgundy px-4 py-2 rounded-full cursor-pointer hover:bg-lipstick transition shadow-lg">
           <Upload size={18} className="text-white"/>
           <span className="text-white text-sm font-bold">Add Cards</span>
-          {/* Added 'multiple' attribute */}
           <input type="file" className="hidden" accept="image/*" multiple onChange={handleUpload} />
         </label>
       </div>
 
-      {/* Grid: 4 Columns on desktop, 2 on mobile */}
+      {/* Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {cards.map(card => (
           <div 
@@ -245,16 +286,14 @@ const Home = () => {
             onClick={() => openCard(card)}
             className="aspect-[3/4] bg-gradient-to-br from-gray-800 to-black rounded-lg border-2 border-gold/50 hover:border-lipstick cursor-pointer flex flex-col items-center justify-center relative overflow-hidden transition transform hover:scale-105 shadow-lg"
           >
-            {/* Thumbnail / Mystery View */}
             <div className="absolute inset-0 bg-pattern opacity-20"></div>
             <Maximize2 className="text-gold mb-2" size={32} />
             <span className="text-gold font-caveat text-xl">Tap to Play</span>
-            {/* Note: Scratched count removed from grid as requested */}
           </div>
         ))}
       </div>
 
-      {/* Modal Overlay for Playing */}
+      {/* Modal Overlay */}
       {selectedCard && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
            <div className="relative w-full max-w-sm flex flex-col items-center animate-fadeIn">
@@ -267,21 +306,30 @@ const Home = () => {
                 <X size={24} />
               </button>
 
-              {/* The Game Card */}
-              <div className="w-full aspect-[3/4]"> {/* Vertical Rectangle Ratio */}
-                 <ScratchCard 
-                    id={selectedCard.id} 
-                    image={selectedCard.filepath} 
-                    onScratchComplete={() => handleScratch(selectedCard.id)}
-                    isHidden={hideTrigger}
-                 />
+              {/* The Game Card Container */}
+              <div className="relative w-full aspect-[3/4]"> 
+                 {showHistory ? (
+                    <HistoryList cardId={selectedCard.id} onClose={() => setShowHistory(false)} />
+                 ) : (
+                    <ScratchCard 
+                      id={selectedCard.id} 
+                      image={selectedCard.filepath} 
+                      onScratchComplete={() => handleScratch(selectedCard.id)}
+                      isHidden={hideTrigger}
+                    />
+                 )}
               </div>
 
-              {/* Stats (Only shown in modal) */}
-              <div className="mt-6 flex items-center gap-2 text-gold text-xl bg-black/50 px-6 py-2 rounded-full border border-gold/30">
+              {/* Stats - Clickable for History */}
+              <button 
+                onClick={() => setShowHistory(!showHistory)}
+                className="mt-6 flex items-center gap-2 text-gold text-xl bg-black/50 px-6 py-2 rounded-full border border-gold/30 hover:bg-white/10 transition"
+              >
                 <Heart size={20} className="fill-lipstick text-lipstick"/> 
-                <span>Revealed {cards.find(c => c.id === selectedCard.id)?.scratched_count || 0} times</span>
-              </div>
+                <span>
+                    {showHistory ? "Back to Card" : `Revealed ${cards.find(c => c.id === selectedCard.id)?.scratched_count || 0} times`}
+                </span>
+              </button>
            </div>
         </div>
       )}
@@ -315,7 +363,6 @@ const Books = () => {
           body: formData
         });
     }
-    // Simple reload to refresh list
     window.location.reload();
   };
 
@@ -336,13 +383,14 @@ const Books = () => {
             href={book.filepath} 
             target="_blank" 
             rel="noopener noreferrer" 
-            className="block group"
+            download
+            className="block group text-decoration-none"
           >
             <div className="bg-gray-900 border border-gold/20 p-6 rounded-lg group-hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md">
               <Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/>
-              <div>
-                <h3 className="text-xl text-white truncate w-48">{book.title}</h3>
-                <p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p>
+              <div className="overflow-hidden">
+                <h3 className="text-xl text-white truncate w-full">{book.title}</h3>
+                <p className="text-gray-500 text-sm group-hover:text-gold">Tap to open / download</p>
               </div>
             </div>
           </a>
@@ -389,8 +437,6 @@ const Settings = ({ user, logout }) => {
   );
 };
 
-// --- Main Layout ---
-
 const Layout = ({ children, user, logout }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
@@ -400,7 +446,6 @@ const Layout = ({ children, user, logout }) => {
       {/* Top Bar */}
       <header className="fixed top-0 w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-3 flex justify-between items-center shadow-lg">
         <div className="flex items-center gap-2">
-          {/* UPDATED: Using the actual uploaded icon */}
           <img src="/apple-touch-icon.png" alt="Logo" className="w-8 h-8 rounded-full border border-gold shadow-md" />
           <h1 className="text-2xl text-gold tracking-widest">Privy</h1>
         </div>
