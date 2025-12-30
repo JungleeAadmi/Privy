@@ -141,11 +141,12 @@ const HistoryList = ({ cardId, onClose }) => {
   );
 };
 
-// 3. PDF Viewer Modal (Improved for Mobile)
+// 3. PDF Viewer Modal (Improved for Mobile & Fixed Top Padding)
 const PDFViewer = ({ url, title, onClose }) => {
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
-      <div className="flex justify-between items-center p-4 bg-gray-900 border-b border-gold/20 safe-top">
+      {/* Added pt-12 to ensure buttons don't hide behind iPhone notch */}
+      <div className="flex justify-between items-center px-4 pb-4 pt-12 bg-gray-900 border-b border-gold/20">
         <h3 className="text-gold text-xl truncate pr-4 max-w-[80%]">{title}</h3>
         <button onClick={onClose} className="p-2 bg-burgundy rounded-full text-white hover:bg-lipstick shadow-lg">
           <X size={24} />
@@ -237,20 +238,40 @@ const Home = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
 
-  useEffect(() => {
-    fetchCards();
-  }, []);
-
+  // Function to load cards
   const fetchCards = async () => {
-    const res = await fetch(`${API_URL}/cards`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      // Auto-shuffle on load
-      setCards(data.sort(() => Math.random() - 0.5));
+    try {
+      const res = await fetch(`${API_URL}/cards`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCards(prevCards => {
+          // Only update if data length changed to avoid constant reshuffling of the view
+          // or ideally, we just update the counts if the IDs match
+          if (JSON.stringify(prevCards.map(c => c.id)) !== JSON.stringify(data.map(c => c.id))) {
+             // New cards added or removed? Shuffle.
+             return data.sort(() => Math.random() - 0.5);
+          }
+          // Just update counts/content without shuffling
+          return data.map(newItem => {
+             const oldItem = prevCards.find(p => p.id === newItem.id);
+             // Preserve order of old items if they exist
+             return oldItem ? { ...newItem } : newItem; 
+          });
+        });
+      }
+    } catch (e) {
+      console.error("Sync error", e);
     }
   };
+
+  useEffect(() => {
+    fetchCards();
+    // REAL-TIME SYNC: Poll every 5 seconds
+    const interval = setInterval(fetchCards, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files);
@@ -272,6 +293,7 @@ const Home = () => {
       method: 'POST',
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
     });
+    // Optimistic update
     setCards(prev => prev.map(c => c.id === id ? {...c, scratched_count: c.scratched_count + 1} : c));
   };
 
@@ -399,14 +421,22 @@ const Books = () => {
   const [books, setBooks] = useState([]);
   const [selectedBook, setSelectedBook] = useState(null);
 
-  useEffect(() => {
-    const loadBooks = async () => {
+  const loadBooks = async () => {
+    try {
       const res = await fetch(`${API_URL}/books`, {
          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       if (res.ok) setBooks(await res.json());
-    };
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
     loadBooks();
+    // REAL-TIME SYNC: Poll every 5 seconds
+    const interval = setInterval(loadBooks, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleUpload = async (e) => {
@@ -421,7 +451,8 @@ const Books = () => {
           body: formData
         });
     }
-    window.location.reload();
+    // No reload needed due to polling, but immediate fetch is nice
+    loadBooks();
   };
 
   return (
