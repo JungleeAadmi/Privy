@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -723,6 +723,11 @@ const Layout = ({ children, user, logout }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
 
+  // Force reload handler logic
+  const handleReload = () => {
+    window.location.reload();
+  };
+
   return (
     <div className="min-h-screen bg-black text-white font-caveat selection:bg-lipstick">
       <header className="fixed top-0 w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-2 flex justify-between items-center shadow-lg">
@@ -734,13 +739,19 @@ const Layout = ({ children, user, logout }) => {
           </div>
         </div>
         
-        <button onClick={() => setMenuOpen(!menuOpen)} className="text-gold focus:outline-none">
-          {menuOpen ? <X size={28} /> : <div className="space-y-1">
-             <div className="w-6 h-0.5 bg-gold"></div>
-             <div className="w-6 h-0.5 bg-gold"></div>
-             <div className="w-6 h-0.5 bg-gold"></div>
-          </div>}
-        </button>
+        <div className="flex items-center gap-4">
+            <button onClick={handleReload} className="text-gold/80 hover:text-gold focus:outline-none active:rotate-180 transition-transform duration-500">
+              <RefreshCw size={24} />
+            </button>
+
+            <button onClick={() => setMenuOpen(!menuOpen)} className="text-gold focus:outline-none">
+              {menuOpen ? <X size={28} /> : <div className="space-y-1">
+                 <div className="w-6 h-0.5 bg-gold"></div>
+                 <div className="w-6 h-0.5 bg-gold"></div>
+                 <div className="w-6 h-0.5 bg-gold"></div>
+              </div>}
+            </button>
+        </div>
       </header>
       {menuOpen && (
         <div className="fixed top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-40 p-4 shadow-2xl transform transition-transform">
