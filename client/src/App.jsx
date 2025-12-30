@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, EyeOff, Heart, Maximize2, Clock, Calendar, Trash2 } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2 } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -30,16 +30,12 @@ const useLongPress = (callback = () => {}, ms = 800) => {
 // --- Components ---
 
 // 1. Triple Tap Reveal Card (Replaces Double Tap)
-const RevealCard = ({ image, id, onRevealComplete, isHidden }) => {
+const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   
   // Use refs for tap counting to avoid re-renders during rapid tapping
   const tapCount = useRef(0);
   const tapTimer = useRef(null);
-
-  useEffect(() => {
-    if (isHidden) setIsRevealed(false);
-  }, [isHidden]);
 
   useEffect(() => {
     // Reset when image changes
@@ -237,7 +233,6 @@ const Auth = ({ setUser }) => {
 
 const Home = () => {
   const [cards, setCards] = useState([]);
-  const [hideTrigger, setHideTrigger] = useState(0);
   const [selectedCard, setSelectedCard] = useState(null); 
   const [showHistory, setShowHistory] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
@@ -250,7 +245,11 @@ const Home = () => {
     const res = await fetch(`${API_URL}/cards`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
     });
-    if (res.ok) setCards(await res.json());
+    if (res.ok) {
+      const data = await res.json();
+      // Auto-shuffle on load
+      setCards(data.sort(() => Math.random() - 0.5));
+    }
   };
 
   const handleUpload = async (e) => {
@@ -320,7 +319,6 @@ const Home = () => {
       <div className="flex justify-between items-center mb-6 bg-black/40 p-4 rounded-xl backdrop-blur-sm sticky top-20 z-10 border-b border-gold/20">
         <div className="flex gap-4">
           <button onClick={shuffleCards} className="flex items-center gap-2 text-gold hover:text-white"><Shuffle size={20}/> Shuffle</button>
-          <button onClick={() => setHideTrigger(prev => prev + 1)} className="flex items-center gap-2 text-gold hover:text-white"><EyeOff size={20}/> Hide All</button>
         </div>
         <label className="flex items-center gap-2 bg-burgundy px-4 py-2 rounded-full cursor-pointer hover:bg-lipstick transition shadow-lg">
           <Upload size={18} className="text-white"/>
@@ -359,7 +357,6 @@ const Home = () => {
                       id={selectedCard.id} 
                       image={selectedCard.filepath} 
                       onRevealComplete={() => handleReveal(selectedCard.id)}
-                      isHidden={hideTrigger}
                     />
                  )}
               </div>
@@ -507,10 +504,13 @@ const Layout = ({ children, user, logout }) => {
 
   return (
     <div className="min-h-screen bg-black text-white font-caveat selection:bg-lipstick">
-      <header className="fixed top-0 w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-3 flex justify-between items-center shadow-lg">
-        <div className="flex items-center gap-2">
-          <img src="/apple-touch-icon.png" alt="Logo" className="w-8 h-8 rounded-full border border-gold shadow-md" />
-          <h1 className="text-2xl text-gold tracking-widest">Privy</h1>
+      <header className="fixed top-0 w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-2 flex justify-between items-center shadow-lg">
+        <div className="flex items-center gap-3">
+          <img src="/apple-touch-icon.png" alt="Logo" className="w-10 h-10 rounded-full border border-gold shadow-md" />
+          <div className="flex flex-col">
+            <h1 className="text-2xl text-gold tracking-widest leading-none">Privy</h1>
+            <span className="text-sm text-gray-400 font-sans">@{user?.username}</span>
+          </div>
         </div>
         
         <button onClick={() => setMenuOpen(!menuOpen)} className="text-gold focus:outline-none">
