@@ -221,7 +221,7 @@ const Auth = ({ setUser }) => {
 const Home = () => {
   const [cards, setCards] = useState([]);
   const [sections, setSections] = useState([]);
-  const [activeSection, setActiveSection] = useState(null); // 'null' is General
+  const [activeSection, setActiveSection] = useState(null); // 'null' is General (or unsorted)
   const [selectedCard, setSelectedCard] = useState(null); 
   const [showHistory, setShowHistory] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
@@ -247,7 +247,6 @@ const Home = () => {
         const cardsData = await cardsRes.json();
         const sectionsData = await sectionsRes.json();
         
-        // Only shuffle if counts change significantly (new load)
         setCards(prev => {
            if(prev.length !== cardsData.length) return cardsData.sort(() => Math.random() - 0.5);
            return cardsData.map(c => {
@@ -272,7 +271,6 @@ const Home = () => {
     for (const file of files) {
       const formData = new FormData();
       formData.append('file', file);
-      // Pass the active section ID (or nothing if General/null)
       if (activeSection) formData.append('section_id', activeSection);
       
       await fetch(`${API_URL}/cards`, {
@@ -315,7 +313,6 @@ const Home = () => {
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
     });
     setSectionMenu(null);
-    // Reset to General if we deleted the active section
     if (activeSection === sectionMenu.id) setActiveSection(null);
     fetchData();
   };
@@ -344,28 +341,26 @@ const Home = () => {
 
   // --- Components ---
 
-  const SectionTab = ({ section, isGeneral }) => {
+  const SectionTab = ({ section }) => {
     const longPressProps = useLongPress(() => {
-      if (!isGeneral) {
         setSectionMenu(section);
         setRenameText(section.title);
         setIsRenamingSection(false);
-      }
     }, 800);
 
-    const isActive = isGeneral ? activeSection === null : activeSection === section.id;
+    const isActive = activeSection === section.id;
 
     return (
       <button
         {...longPressProps}
-        onClick={() => setActiveSection(isGeneral ? null : section.id)}
+        onClick={() => setActiveSection(isActive ? null : section.id)} // Toggle logic: Click active to deselect
         className={`px-4 py-2 rounded-full whitespace-nowrap transition border ${
           isActive 
-            ? 'bg-burgundy border-gold text-white shadow-lg transform scale-105' 
+            ? 'bg-burgundy border-gold text-white shadow-lg transform scale-105 z-10' 
             : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-800'
         }`}
       >
-        {isGeneral ? 'General' : section.title}
+        {section.title}
       </button>
     );
   };
@@ -397,24 +392,22 @@ const Home = () => {
     );
   };
 
-  // Filter cards based on active section
-  // Note: section_id coming from DB might be integer or null. activeSection is integer or null.
   const filteredCards = cards.filter(c => {
-    if (activeSection === null) return c.section_id == null; // General tab shows null section_id
+    if (activeSection === null) return c.section_id == null; 
     return c.section_id === activeSection;
   });
 
   return (
     <div className="pb-24 pt-4 px-4 min-h-screen">
       {/* Sections Bar */}
-      <div className="flex gap-2 overflow-x-auto pb-4 mb-4 no-scrollbar">
-        <SectionTab isGeneral />
+      {/* Added p-2 to container for active state scaling, and -mx-2 to align visually with edge */}
+      <div className="flex gap-2 overflow-x-auto pb-4 mb-4 no-scrollbar p-2 -mx-2">
         {sections.map(s => <SectionTab key={s.id} section={s} />)}
         
         {/* Add Section Button */}
         <button 
           onClick={() => setIsCreatingSection(true)}
-          className="px-3 py-2 rounded-full bg-gray-800 border border-gray-600 text-gold hover:bg-gray-700 flex items-center"
+          className="px-3 py-2 rounded-full bg-gray-800 border border-gray-600 text-gold hover:bg-gray-700 flex items-center shrink-0"
         >
           <Plus size={18} />
         </button>
