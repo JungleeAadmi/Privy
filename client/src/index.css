@@ -1,0 +1,37 @@
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Colors handled in Tailwind Config, adding root vars here just in case */
+:root {
+  --color-lipstick: #D2042D;
+  --color-eggplant: #301934;
+  --color-burgundy: #800020;
+  --color-gold: #FFD700;
+}
+
+body {
+  margin: 0;
+  font-family: 'Caveat', cursive;
+  background-color: #000;
+  color: #fff;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hide Scrollbar for clean UI */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #111;
+}
+::-webkit-scrollbar-thumb {
+  background: #800020;
+  border-radius: 3px;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}

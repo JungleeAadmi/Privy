@@ -1,0 +1,33 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="passionGradient" x1="256" y1="480" x2="256" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4A1D4F" /> <stop offset="50%" stop-color="#7B2336" /> <stop offset="100%" stop-color="#C70039" /> </linearGradient>
+    
+    <linearGradient id="bgDiagonalGradient" x1="0%" y1="0%" x2="100%" y2="100%" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#000000" /> <stop offset="100%" stop-color="#4A1D4F" /> </linearGradient>
+
+    <filter id="outerGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.831 0 0 0 0 0.686 0 0 0 0 0.215 0 0 0 0.4 0" result="goldBlur"/>
+      <feMerge>
+        <feMergeNode in="goldBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="url(#bgDiagonalGradient)" />
+
+  <g filter="url(#outerGlow)">
+    <path d="M256 432C160 352 96 288 96 208C96 144 144 96 208 96C232 96 256 112 256 112C256 112 280 96 304 96C368 96 416 144 416 208C416 288 352 352 256 432Z" 
+          fill="url(#passionGradient)" stroke="#D4AF37" stroke-width="8" stroke-linejoin="round" />
+    
+    <path d="M208 96C184 64 192 32 224 32C240 32 256 48 256 64" 
+          stroke="#D4AF37" stroke-width="8" stroke-linecap="round" fill="none"/>
+    <path d="M304 96C328 64 320 32 288 32C272 32 256 48 256 64" 
+          stroke="#D4AF37" stroke-width="8" stroke-linecap="round" fill="none"/>
+
+    <path d="M256 224C247.163 224 240 231.163 240 240C240 246.47 243.84 252.063 249.385 254.578L244.343 288H267.657L262.615 254.578C268.16 252.063 272 246.47 272 240C272 231.163 264.837 224 256 224Z" 
+          fill="#D4AF37" />
+  </g>
+</svg>

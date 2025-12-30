@@ -1,0 +1,177 @@
+/**
+ * Privy Backend - Node.js
+ * Handles API, Database, and File Serving
+ */
+
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const cors = require('cors');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../data');
+const DB_PATH = path.join(DATA_DIR, 'privy.db');
+const SECRET_KEY = 'privy_super_secret_love_key'; // Change in prod
+
+// --- Middleware ---
+app.use(express.json());
+app.use(cors());
+app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads')));
+app.use(express.static(path.join(__dirname, '../client/dist'))); // Serve React build
+
+// --- Database Setup ---
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const db = new sqlite3.Database(DB_PATH, (err) => {
+    if (err) console.error('DB Error:', err.message);
+    else console.log('✅ Connected to SQLite database.');
+});
+
+// Init Tables
+db.serialize(() => {
+    // Users Table
+    db.run(`CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password TEXT,
+        name TEXT,
+        age INTEGER,
+        gender TEXT,
+        avatar TEXT
+    )`);
+
+    // Scratch Cards Table
+    db.run(`CREATE TABLE IF NOT EXISTS cards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filepath TEXT,
+        scratched_count INTEGER DEFAULT 0
+    )`);
+    
+    // Books Table
+    db.run(`CREATE TABLE IF NOT EXISTS books (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        filepath TEXT
+    )`);
+});
+
+// --- File Upload Config ---
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const type = req.path.includes('book') ? 'books' : 'cards';
+        const dir = path.join(DATA_DIR, 'uploads', type);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + '-' + file.originalname);
+    }
+});
+const upload = multer({ storage });
+
+// --- Helpers ---
+const auth = (req, res, next) => {
+    const token = req.headers['authorization'];
+    if (!token) return res.status(403).json({ error: 'No token' });
+    try {
+        const decoded = jwt.verify(token.split(' ')[1], SECRET_KEY);
+        req.user = decoded;
+        next();
+    } catch (e) { res.status(401).json({ error: 'Unauthorized' }); }
+};
+
+// --- Routes: Auth ---
+app.post('/api/register', (req, res) => {
+    const { username, password, name, age, gender } = req.body;
+    const hash = bcrypt.hashSync(password, 8);
+    db.run(`INSERT INTO users (username, password, name, age, gender) VALUES (?,?,?,?,?)`,
+        [username, hash, name, age, gender],
+        function(err) {
+            if (err) return res.status(400).json({ error: 'Username taken' });
+            res.json({ success: true, id: this.lastID });
+        }
+    );
+});
+
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    db.get(`SELECT * FROM users WHERE username = ?`, [username], (err, user) => {
+        if (!user || !bcrypt.compareSync(password, user.password)) 
+            return res.status(400).json({ error: 'Invalid credentials' });
+        const token = jwt.sign({ id: user.id, name: user.name }, SECRET_KEY);
+        res.json({ token, user });
+    });
+});
+
+app.put('/api/user', auth, (req, res) => {
+    const { name, age, gender, password } = req.body;
+    let sql = `UPDATE users SET name = ?, age = ?, gender = ? WHERE id = ?`;
+    let params = [name, age, gender, req.user.id];
+    
+    if (password) {
+        sql = `UPDATE users SET name = ?, age = ?, gender = ?, password = ? WHERE id = ?`;
+        params = [name, age, gender, bcrypt.hashSync(password, 8), req.user.id];
+    }
+    
+    db.run(sql, params, (err) => {
+        if (err) return res.status(500).json({error: err.message});
+        res.json({success: true});
+    });
+});
+
+// --- Routes: Cards ---
+app.get('/api/cards', auth, (req, res) => {
+    db.all(`SELECT * FROM cards`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+app.post('/api/cards', auth, upload.single('file'), (req, res) => {
+    if(!req.file) return res.status(400).json({error: 'No file'});
+    const filepath = `/uploads/cards/${req.file.filename}`;
+    db.run(`INSERT INTO cards (filepath) VALUES (?)`, [filepath], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ id: this.lastID, filepath });
+    });
+});
+
+app.post('/api/cards/:id/scratch', auth, (req, res) => {
+    db.run(`UPDATE cards SET scratched_count = scratched_count + 1 WHERE id = ?`, [req.params.id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
+// --- Routes: Books ---
+app.get('/api/books', auth, (req, res) => {
+    db.all(`SELECT * FROM books`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+app.post('/api/books', auth, upload.single('file'), (req, res) => {
+    if(!req.file) return res.status(400).json({error: 'No file'});
+    const filepath = `/uploads/books/${req.file.filename}`;
+    // Use filename as title for simplicity, can be edited later
+    db.run(`INSERT INTO books (title, filepath) VALUES (?, ?)`, [req.file.originalname, filepath], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ id: this.lastID, filepath });
+    });
+});
+
+
+// Serve React for any other route
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+});
+
+app.listen(PORT, () => {
+    console.log(`🚀 Privy running on port ${PORT}`);
+});
