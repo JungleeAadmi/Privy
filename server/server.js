@@ -90,36 +90,36 @@ const sendNtfy = (cardId) => {
             if (!card) return;
 
             // Construct absolute path to file
-            // card.filepath is stored like "/uploads/cards/filename.jpg"
-            // We need to resolve this relative to DATA_DIR
             const cleanPath = card.filepath.replace('/uploads/', '');
             const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
 
             if (fs.existsSync(absPath)) {
-                // 3. Send to Ntfy
                 if (typeof fetch !== 'function') return;
 
-                const fileStream = fs.createReadStream(absPath);
-                
-                // Construct URL (handle trailing slash)
-                const baseUrl = settings.ntfy_url.replace(/\/$/, '');
-                const url = `${baseUrl}/${settings.ntfy_topic}`;
+                // Read file into Buffer (More robust than streams for this use case)
+                try {
+                    const fileBuffer = fs.readFileSync(absPath);
+                    
+                    // Construct URL (handle trailing slash)
+                    const baseUrl = settings.ntfy_url.replace(/\/$/, '');
+                    const url = `${baseUrl}/${settings.ntfy_topic}`;
 
-                const { size } = fs.statSync(absPath);
-
-                fetch(url, {
-                    method: 'PUT',
-                    body: fileStream,
-                    headers: {
-                        'Title': 'Privy: Card Revealed!',
-                        'Message': 'Someone just revealed a card! Tap to see.', // Header used for text when body is an image
-                        'Tags': 'heart,fire,camera',
-                        'Priority': 'high',
-                        'Content-Length': size,
-                        'Filename': 'reveal.jpg'
-                    },
-                    duplex: 'half' // Required for Node.js fetch with streams
-                }).catch(err => console.error("Ntfy Error:", err.message));
+                    fetch(url, {
+                        method: 'PUT',
+                        body: fileBuffer,
+                        headers: {
+                            'Title': 'Privy: Card Revealed!',
+                            'Message': 'Someone just revealed a card! Tap to see.',
+                            'Tags': 'heart,fire,camera',
+                            'Priority': 'high',
+                            'Filename': 'reveal.jpg'
+                        }
+                    }).then(res => {
+                        if (!res.ok) console.error("Ntfy Failed:", res.status, res.statusText);
+                    }).catch(err => console.error("Ntfy Error:", err.message));
+                } catch (readErr) {
+                    console.error("File Read Error:", readErr);
+                }
             }
         });
     });
