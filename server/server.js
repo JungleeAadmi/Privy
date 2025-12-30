@@ -49,6 +49,16 @@ db.serialize(() => {
         filepath TEXT,
         scratched_count INTEGER DEFAULT 0
     )`);
+
+    // Add section_id column if it doesn't exist (Migration for existing users)
+    db.run(`ALTER TABLE cards ADD COLUMN section_id INTEGER`, (err) => {
+        // Ignore error if column already exists
+    });
+
+    db.run(`CREATE TABLE IF NOT EXISTS sections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT
+    )`);
     
     db.run(`CREATE TABLE IF NOT EXISTS card_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,6 +139,54 @@ app.put('/api/user', auth, (req, res) => {
     });
 });
 
+// --- Routes: Sections ---
+app.get('/api/sections', auth, (req, res) => {
+    db.all(`SELECT * FROM sections`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+app.post('/api/sections', auth, (req, res) => {
+    const { title } = req.body;
+    db.run(`INSERT INTO sections (title) VALUES (?)`, [title], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ id: this.lastID, title });
+    });
+});
+
+app.put('/api/sections/:id', auth, (req, res) => {
+    const { title } = req.body;
+    db.run(`UPDATE sections SET title = ? WHERE id = ?`, [title, req.params.id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
+app.delete('/api/sections/:id', auth, (req, res) => {
+    const id = req.params.id;
+    // First, find all cards in this section to delete their files
+    db.all(`SELECT filepath FROM cards WHERE section_id = ?`, [id], (err, rows) => {
+        if(rows) {
+            rows.forEach(row => {
+                try {
+                    const cleanPath = row.filepath.replace('/uploads/', '');
+                    const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
+                    if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+                } catch(e) { console.error("File deletion error", e); }
+            });
+        }
+        // Then delete the DB records
+        db.serialize(() => {
+            db.run(`DELETE FROM cards WHERE section_id = ?`, [id]);
+            db.run(`DELETE FROM sections WHERE id = ?`, [id], (err) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({ success: true });
+            });
+        });
+    });
+});
+
 // --- Routes: Cards ---
 app.get('/api/cards', auth, (req, res) => {
     db.all(`SELECT * FROM cards`, [], (err, rows) => {
@@ -140,7 +198,8 @@ app.get('/api/cards', auth, (req, res) => {
 app.post('/api/cards', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error: 'No file'});
     const filepath = `/uploads/cards/${req.file.filename}`;
-    db.run(`INSERT INTO cards (filepath) VALUES (?)`, [filepath], function(err) {
+    const sectionId = req.body.section_id || null;
+    db.run(`INSERT INTO cards (filepath, section_id) VALUES (?, ?)`, [filepath, sectionId], function(err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ id: this.lastID, filepath });
     });
@@ -151,13 +210,6 @@ app.delete('/api/cards/:id', auth, (req, res) => {
     db.get(`SELECT filepath FROM cards WHERE id = ?`, [id], (err, row) => {
         if (!row) return res.status(404).json({error: 'Card not found'});
         
-        // Try to delete file
-        const fullPath = path.join(DATA_DIR, row.filepath); // filepath already includes /uploads/...
-        // The filepath in DB starts with /uploads, but DATA_DIR points to data.
-        // We mounted /uploads static route to DATA_DIR/uploads.
-        // So we need to construct the absolute path carefully.
-        // If row.filepath is "/uploads/cards/file.png" and DATA_DIR is "/opt/privy/data"
-        // We need "/opt/privy/data/uploads/cards/file.png".
         const cleanPath = row.filepath.replace('/uploads/', '');
         const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
 
