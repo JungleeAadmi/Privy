@@ -1,6 +1,6 @@
 /**
  * Privy Backend - Node.js
- * Handles API, Database, and File Serving
+ * Handles API, Database, File Serving, and Notifications
  */
 
 const express = require('express');
@@ -47,13 +47,9 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS cards (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         filepath TEXT,
-        scratched_count INTEGER DEFAULT 0
+        scratched_count INTEGER DEFAULT 0,
+        section_id INTEGER
     )`);
-
-    // Add section_id column if it doesn't exist (Migration for existing users)
-    db.run(`ALTER TABLE cards ADD COLUMN section_id INTEGER`, (err) => {
-        // Ignore error if column already exists
-    });
 
     db.run(`CREATE TABLE IF NOT EXISTS sections (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +68,62 @@ db.serialize(() => {
         title TEXT,
         filepath TEXT
     )`);
+
+    // Settings table for Ntfy config
+    db.run(`CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )`);
 });
+
+// --- Helper: Send Ntfy Notification ---
+const sendNtfy = (cardId) => {
+    // 1. Get Settings
+    db.all(`SELECT * FROM settings WHERE key IN ('ntfy_url', 'ntfy_topic')`, [], (err, rows) => {
+        if (err || !rows) return;
+        
+        const settings = rows.reduce((acc, r) => ({...acc, [r.key]: r.value}), {});
+        if (!settings.ntfy_url || !settings.ntfy_topic) return;
+
+        // 2. Get Card Image Path
+        db.get(`SELECT filepath FROM cards WHERE id = ?`, [cardId], (err, card) => {
+            if (!card) return;
+
+            // Construct absolute path to file
+            const cleanPath = card.filepath.replace('/uploads/', '');
+            const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
+
+            if (fs.existsSync(absPath)) {
+                // 3. Send to Ntfy
+                // We verify if 'fetch' is available (Node 18+), otherwise we skip logging or could implement http request
+                if (typeof fetch !== 'function') return;
+
+                const fileStream = fs.createReadStream(absPath);
+                
+                // Construct URL (handle trailing slash)
+                const baseUrl = settings.ntfy_url.replace(/\/$/, '');
+                const url = `${baseUrl}/${settings.ntfy_topic}`;
+
+                // Using stream as body requires duplex: 'half' in some node versions or simply passing stream
+                // Node 18 fetch handles streams well.
+                const { size } = fs.statSync(absPath);
+
+                fetch(url, {
+                    method: 'PUT',
+                    body: fileStream,
+                    headers: {
+                        'Title': 'Privy: Card Revealed!',
+                        'Tags': 'heart,fire,camera',
+                        'Priority': 'high',
+                        'Content-Length': size,
+                        'Filename': 'reveal.jpg'
+                    },
+                    duplex: 'half' // Required for Node.js fetch with streams
+                }).catch(err => console.error("Ntfy Error:", err.message));
+            }
+        });
+    });
+};
 
 // --- File Upload Config ---
 const storage = multer.diskStorage({
@@ -127,15 +178,33 @@ app.put('/api/user', auth, (req, res) => {
     const { name, age, gender, password } = req.body;
     let sql = `UPDATE users SET name = ?, age = ?, gender = ? WHERE id = ?`;
     let params = [name, age, gender, req.user.id];
-    
     if (password) {
         sql = `UPDATE users SET name = ?, age = ?, gender = ?, password = ? WHERE id = ?`;
         params = [name, age, gender, bcrypt.hashSync(password, 8), req.user.id];
     }
-    
     db.run(sql, params, (err) => {
         if (err) return res.status(500).json({error: err.message});
         res.json({success: true});
+    });
+});
+
+// --- Routes: Settings ---
+app.get('/api/settings', auth, (req, res) => {
+    db.all(`SELECT * FROM settings`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        const settings = rows.reduce((acc, r) => ({...acc, [r.key]: r.value}), {});
+        res.json(settings);
+    });
+});
+
+app.put('/api/settings', auth, (req, res) => {
+    const { ntfy_url, ntfy_topic } = req.body;
+    db.serialize(() => {
+        const stmt = db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`);
+        stmt.run('ntfy_url', ntfy_url);
+        stmt.run('ntfy_topic', ntfy_topic);
+        stmt.finalize();
+        res.json({ success: true });
     });
 });
 
@@ -165,7 +234,6 @@ app.put('/api/sections/:id', auth, (req, res) => {
 
 app.delete('/api/sections/:id', auth, (req, res) => {
     const id = req.params.id;
-    // First, find all cards in this section to delete their files
     db.all(`SELECT filepath FROM cards WHERE section_id = ?`, [id], (err, rows) => {
         if(rows) {
             rows.forEach(row => {
@@ -176,7 +244,6 @@ app.delete('/api/sections/:id', auth, (req, res) => {
                 } catch(e) { console.error("File deletion error", e); }
             });
         }
-        // Then delete the DB records
         db.serialize(() => {
             db.run(`DELETE FROM cards WHERE section_id = ?`, [id]);
             db.run(`DELETE FROM sections WHERE id = ?`, [id], (err) => {
@@ -209,13 +276,9 @@ app.delete('/api/cards/:id', auth, (req, res) => {
     const id = req.params.id;
     db.get(`SELECT filepath FROM cards WHERE id = ?`, [id], (err, row) => {
         if (!row) return res.status(404).json({error: 'Card not found'});
-        
         const cleanPath = row.filepath.replace('/uploads/', '');
         const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
-
-        if (fs.existsSync(absPath)) {
-            fs.unlinkSync(absPath);
-        }
+        if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
 
         db.serialize(() => {
             db.run(`DELETE FROM card_history WHERE card_id = ?`, [id]);
@@ -233,20 +296,20 @@ app.post('/api/cards/:id/scratch', auth, (req, res) => {
         db.run(`INSERT INTO card_history (card_id) VALUES (?)`, [cardId]);
         db.run(`UPDATE cards SET scratched_count = scratched_count + 1 WHERE id = ?`, [cardId], (err) => {
             if (err) return res.status(500).json({ error: err.message });
+            
+            // Trigger Notification
+            sendNtfy(cardId);
+            
             res.json({ success: true });
         });
     });
 });
 
 app.get('/api/cards/:id/history', auth, (req, res) => {
-    db.all(
-        `SELECT timestamp FROM card_history WHERE card_id = ? ORDER BY timestamp DESC`, 
-        [req.params.id], 
-        (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json(rows);
-        }
-    );
+    db.all(`SELECT timestamp FROM card_history WHERE card_id = ? ORDER BY timestamp DESC`, [req.params.id], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
 });
 
 // --- Routes: Books ---
@@ -278,13 +341,9 @@ app.delete('/api/books/:id', auth, (req, res) => {
     const id = req.params.id;
     db.get(`SELECT filepath FROM books WHERE id = ?`, [id], (err, row) => {
         if (!row) return res.status(404).json({error: 'Book not found'});
-        
         const cleanPath = row.filepath.replace('/uploads/', '');
         const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
-
-        if (fs.existsSync(absPath)) {
-            fs.unlinkSync(absPath);
-        }
+        if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
 
         db.run(`DELETE FROM books WHERE id = ?`, [id], (err) => {
             if(err) return res.status(500).json({error: err.message});

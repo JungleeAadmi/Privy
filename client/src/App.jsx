@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -221,13 +221,12 @@ const Auth = ({ setUser }) => {
 const Home = () => {
   const [cards, setCards] = useState([]);
   const [sections, setSections] = useState([]);
-  const [activeSection, setActiveSection] = useState(null); // 'null' is General (or unsorted)
+  const [activeSection, setActiveSection] = useState(null); 
   const [selectedCard, setSelectedCard] = useState(null); 
   const [showHistory, setShowHistory] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   
-  // Section Management State
-  const [sectionMenu, setSectionMenu] = useState(null); // The section being edited
+  const [sectionMenu, setSectionMenu] = useState(null); 
   const [isCreatingSection, setIsCreatingSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
   const [renameText, setRenameText] = useState("");
@@ -353,7 +352,7 @@ const Home = () => {
     return (
       <button
         {...longPressProps}
-        onClick={() => setActiveSection(isActive ? null : section.id)} // Toggle logic: Click active to deselect
+        onClick={() => setActiveSection(isActive ? null : section.id)}
         className={`px-4 py-2 rounded-full whitespace-nowrap transition border ${
           isActive 
             ? 'bg-burgundy border-gold text-white shadow-lg transform scale-105 z-10' 
@@ -399,12 +398,9 @@ const Home = () => {
 
   return (
     <div className="pb-24 pt-4 px-4 min-h-screen">
-      {/* Sections Bar */}
-      {/* Added p-2 to container for active state scaling, and -mx-2 to align visually with edge */}
       <div className="flex gap-2 overflow-x-auto pb-4 mb-4 no-scrollbar p-2 -mx-2">
         {sections.map(s => <SectionTab key={s.id} section={s} />)}
         
-        {/* Add Section Button */}
         <button 
           onClick={() => setIsCreatingSection(true)}
           className="px-3 py-2 rounded-full bg-gray-800 border border-gray-600 text-gold hover:bg-gray-700 flex items-center shrink-0"
@@ -413,7 +409,6 @@ const Home = () => {
         </button>
       </div>
 
-      {/* Controls */}
       <div className="flex justify-between items-center mb-6 bg-black/40 p-4 rounded-xl backdrop-blur-sm border-b border-gold/20">
         <div className="flex gap-4">
           <button onClick={shuffleCards} className="flex items-center gap-2 text-gold hover:text-white"><Shuffle size={20}/> Shuffle</button>
@@ -425,7 +420,6 @@ const Home = () => {
         </label>
       </div>
 
-      {/* Grid */}
       {filteredCards.length === 0 ? (
         <div className="flex flex-col items-center justify-center mt-10 text-gray-500 gap-4">
           <Folder size={48} />
@@ -439,7 +433,6 @@ const Home = () => {
         </div>
       )}
 
-      {/* Create Section Modal */}
       {isCreatingSection && (
         <div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-gold p-6 rounded-xl w-72">
@@ -459,12 +452,10 @@ const Home = () => {
         </div>
       )}
 
-      {/* Section Options Modal (Rename/Delete) */}
       {sectionMenu && (
         <div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-72 text-center shadow-2xl">
             <h3 className="text-gold text-xl mb-4 truncate">{sectionMenu.title}</h3>
-            
             {isRenamingSection ? (
               <div className="space-y-4">
                 <input 
@@ -495,7 +486,6 @@ const Home = () => {
         </div>
       )}
 
-      {/* Card Play Modal */}
       {selectedCard && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
            <div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black animate-fadeIn">
@@ -526,7 +516,6 @@ const Home = () => {
         </div>
       )}
 
-      {/* Card Delete Modal */}
       {deleteId && (
         <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center">
@@ -687,6 +676,14 @@ const Books = () => {
 
 const Settings = ({ user, logout }) => {
   const [form, setForm] = useState({ ...user, password: '' });
+  const [ntfy, setNtfy] = useState({ ntfy_url: '', ntfy_topic: '' });
+
+  useEffect(() => {
+    fetch(`${API_URL}/settings`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+      .then(res => res.json())
+      .then(setNtfy)
+      .catch(console.error);
+  }, []);
 
   const handleUpdate = async (e) => {
     e.preventDefault();
@@ -695,21 +692,58 @@ const Settings = ({ user, logout }) => {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
       body: JSON.stringify(form)
     });
-    alert('Profile Updated');
+    
+    // Save Ntfy Settings
+    await fetch(`${API_URL}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: JSON.stringify(ntfy)
+    });
+
+    alert('Profile & Settings Updated');
   };
 
   return (
     <div className="p-6 text-gold pb-24">
       <h2 className="text-3xl mb-6">Settings</h2>
       <form onSubmit={handleUpdate} className="max-w-md mx-auto space-y-4">
-        <div>
-           <label>Display Name</label>
-           <input className="w-full p-2 bg-gray-800 rounded border border-burgundy" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+        
+        {/* Profile */}
+        <div className="space-y-4 border-b border-gold/30 pb-6">
+            <h3 className="text-xl text-white/80">Profile</h3>
+            <div>
+            <label>Display Name</label>
+            <input className="w-full p-2 bg-gray-800 rounded border border-burgundy" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+            </div>
+            <div>
+            <label>Change Password (Optional)</label>
+            <input className="w-full p-2 bg-gray-800 rounded border border-burgundy" type="password" onChange={e => setForm({...form, password: e.target.value})} />
+            </div>
         </div>
-        <div>
-           <label>Change Password (Optional)</label>
-           <input className="w-full p-2 bg-gray-800 rounded border border-burgundy" type="password" onChange={e => setForm({...form, password: e.target.value})} />
+
+        {/* Notifications */}
+        <div className="space-y-4 border-b border-gold/30 pb-6">
+            <h3 className="text-xl text-white/80 flex items-center gap-2"><Bell size={20}/> Notifications (Ntfy)</h3>
+            <div>
+            <label>Server URL (e.g. https://ntfy.sh)</label>
+            <input 
+                className="w-full p-2 bg-gray-800 rounded border border-burgundy" 
+                value={ntfy.ntfy_url || ''} 
+                onChange={e => setNtfy({...ntfy, ntfy_url: e.target.value})} 
+                placeholder="https://ntfy.sh"
+            />
+            </div>
+            <div>
+            <label>Topic Name</label>
+            <input 
+                className="w-full p-2 bg-gray-800 rounded border border-burgundy" 
+                value={ntfy.ntfy_topic || ''} 
+                onChange={e => setNtfy({...ntfy, ntfy_topic: e.target.value})} 
+                placeholder="my_secret_couple_channel"
+            />
+            </div>
         </div>
+
         <button className="w-full bg-gold text-black font-bold p-3 rounded hover:bg-yellow-600">Save Changes</button>
       </form>
       <button onClick={logout} className="w-full mt-8 bg-red-900 text-white font-bold p-3 rounded flex items-center justify-center gap-2">
@@ -723,7 +757,6 @@ const Layout = ({ children, user, logout }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
 
-  // Force reload handler logic
   const handleReload = () => {
     window.location.reload();
   };
@@ -765,7 +798,6 @@ const Layout = ({ children, user, logout }) => {
         {children}
       </main>
       
-      {/* Bottom Nav */}
       <nav className="fixed bottom-0 w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50">
         <Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}>
           <Layers size={24} />
