@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -703,6 +703,17 @@ const Settings = ({ user, logout }) => {
     alert('Profile & Settings Updated');
   };
 
+  const handleTestNtfy = async () => {
+    const res = await fetch(`${API_URL}/settings/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: JSON.stringify(ntfy)
+    });
+    
+    if (res.ok) alert('Notification Sent! Check your device.');
+    else alert('Failed to send notification. Check URL/Topic.');
+  };
+
   return (
     <div className="p-6 text-gold pb-24">
       <h2 className="text-3xl mb-6">Settings</h2>
@@ -722,8 +733,13 @@ const Settings = ({ user, logout }) => {
         </div>
 
         {/* Notifications */}
-        <div className="space-y-4 border-b border-gold/30 pb-6">
-            <h3 className="text-xl text-white/80 flex items-center gap-2"><Bell size={20}/> Notifications (Ntfy)</h3>
+        <div className="space-y-4 border-b border-gold/30 pb-6 relative">
+            <div className="flex justify-between items-center">
+                <h3 className="text-xl text-white/80 flex items-center gap-2"><Bell size={20}/> Notifications (Ntfy)</h3>
+                <button type="button" onClick={handleTestNtfy} className="flex items-center gap-1 bg-burgundy/80 hover:bg-burgundy px-3 py-1 rounded text-white text-sm">
+                    <Send size={14} /> Test
+                </button>
+            </div>
             <div>
             <label>Server URL (e.g. https://ntfy.sh)</label>
             <input 

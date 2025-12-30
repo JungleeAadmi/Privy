@@ -95,7 +95,6 @@ const sendNtfy = (cardId) => {
 
             if (fs.existsSync(absPath)) {
                 // 3. Send to Ntfy
-                // We verify if 'fetch' is available (Node 18+), otherwise we skip logging or could implement http request
                 if (typeof fetch !== 'function') return;
 
                 const fileStream = fs.createReadStream(absPath);
@@ -104,8 +103,6 @@ const sendNtfy = (cardId) => {
                 const baseUrl = settings.ntfy_url.replace(/\/$/, '');
                 const url = `${baseUrl}/${settings.ntfy_topic}`;
 
-                // Using stream as body requires duplex: 'half' in some node versions or simply passing stream
-                // Node 18 fetch handles streams well.
                 const { size } = fs.statSync(absPath);
 
                 fetch(url, {
@@ -206,6 +203,35 @@ app.put('/api/settings', auth, (req, res) => {
         stmt.finalize();
         res.json({ success: true });
     });
+});
+
+// TEST Endpoint for Notifications
+app.post('/api/settings/test', auth, (req, res) => {
+    const { ntfy_url, ntfy_topic } = req.body;
+    
+    if (!ntfy_url || !ntfy_topic) {
+        return res.status(400).json({ error: 'Missing Ntfy configuration details' });
+    }
+
+    const baseUrl = ntfy_url.replace(/\/$/, '');
+    const url = `${baseUrl}/${ntfy_topic}`;
+
+    if (typeof fetch !== 'function') return res.status(500).json({error: 'Server fetch support missing'});
+
+    fetch(url, {
+        method: 'POST',
+        body: "Privy Notification Test Successful! 🎉",
+        headers: {
+            'Title': 'Privy Test',
+            'Tags': 'tada,check_mark',
+            'Priority': 'default'
+        }
+    })
+    .then(response => {
+        if (response.ok) res.json({ success: true });
+        else res.status(500).json({ error: `Ntfy Error: ${response.status} ${response.statusText}` });
+    })
+    .catch(err => res.status(500).json({ error: err.message }));
 });
 
 // --- Routes: Sections ---
