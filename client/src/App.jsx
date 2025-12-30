@@ -29,86 +29,60 @@ const useLongPress = (callback = () => {}, ms = 800) => {
 
 // --- Components ---
 
-// 1. Scratch Card Component
-const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
-  const canvasRef = useRef(null);
+// 1. Double Tap Reveal Card (Replaces ScratchCard)
+const RevealCard = ({ image, id, onRevealComplete, isHidden }) => {
   const [isRevealed, setIsRevealed] = useState(false);
-  const [ctx, setCtx] = useState(null);
+  const lastTap = useRef(0);
 
   useEffect(() => {
-    if (isHidden) resetCard();
+    if (isHidden) setIsRevealed(false);
   }, [isHidden]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const context = canvas.getContext('2d');
-    setCtx(context);
-    resetCard();
+    // Reset when image changes
+    setIsRevealed(false);
   }, [image]);
 
-  const resetCard = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const context = canvas.getContext('2d');
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.globalCompositeOperation = 'source-over';
-    context.fillStyle = '#C0C0C0';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.font = '30px Caveat';
-    context.fillStyle = '#333';
-    context.textAlign = "center";
-    context.fillText("Scratch Me!", canvas.width / 2, canvas.height / 2);
-    setIsRevealed(false);
-  };
+  const handleInteraction = (e) => {
+    e.preventDefault(); // Prevent zoom/scroll issues
+    const now = Date.now();
+    const DOUBLE_PRESS_DELAY = 300; // ms
 
-  const handleScratch = (e) => {
-    // Prevent default to stop scrolling
-    if(e.cancelable) e.preventDefault();
-
-    if (isRevealed || !ctx) return;
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    
-    let clientX, clientY;
-    if (e.changedTouches && e.changedTouches.length > 0) {
-       clientX = e.changedTouches[0].clientX;
-       clientY = e.changedTouches[0].clientY;
-    } else {
-       clientX = e.clientX;
-       clientY = e.clientY;
+    if (now - lastTap.current < DOUBLE_PRESS_DELAY) {
+      // Double tap detected
+      if (!isRevealed) {
+        setIsRevealed(true);
+        onRevealComplete(id);
+      }
     }
-
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.beginPath();
-    ctx.arc(x, y, 30, 0, Math.PI * 2);
-    ctx.fill();
-
-    checkReveal();
-  };
-
-  const checkReveal = () => {
-    if (isRevealed) return;
-    onScratchComplete(id);
-    setIsRevealed(true); 
+    lastTap.current = now;
   };
 
   return (
-    <div className="relative w-full h-full rounded-xl overflow-hidden shadow-2xl border-4 border-gold bg-white">
-      <img src={image} alt="Secret" className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none" />
-      <canvas
-        ref={canvasRef}
-        width={320}
-        height={480}
-        className="absolute inset-0 cursor-pointer touch-none"
-        style={{ touchAction: 'none' }}
-        onMouseMove={(e) => e.buttons === 1 && handleScratch(e)}
-        onTouchMove={handleScratch}
-        onMouseDown={handleScratch}
-      />
+    <div 
+      className="relative w-full h-full bg-black select-none overflow-hidden"
+      onClick={handleInteraction}
+      onTouchStart={handleInteraction}
+    >
+      {/* The Image (Always rendered, hidden by overlay if not revealed) */}
+      <img src={image} alt="Secret" className="absolute inset-0 w-full h-full object-cover" />
+
+      {/* The Chess Pattern Overlay */}
+      {!isRevealed && (
+        <div 
+          className="absolute inset-0 z-10 flex items-center justify-center p-4"
+          style={{
+            // CSS Chess Board Pattern
+            backgroundImage: `conic-gradient(#2a2a2a 0.25turn, #111 0.25turn 0.5turn, #2a2a2a 0.5turn 0.75turn, #111 0.75turn)`,
+            backgroundSize: '40px 40px',
+            backgroundPosition: 'top left'
+          }}
+        >
+          <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl border-2 border-gold/50 shadow-[0_0_20px_rgba(255,215,0,0.3)] animate-pulse">
+            <span className="text-gold font-caveat text-3xl drop-shadow-md">Double Tap</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -132,10 +106,9 @@ const HistoryList = ({ cardId, onClose }) => {
   }, [cardId]);
 
   return (
-    <div className="absolute inset-0 bg-gray-900 rounded-xl p-4 overflow-y-auto animate-fadeIn z-20">
+    <div className="w-full h-full bg-gray-900 p-4 overflow-y-auto animate-fadeIn">
        <div className="flex justify-between items-center mb-4 border-b border-gold/30 pb-2">
          <h3 className="text-gold text-xl flex items-center gap-2"><Clock size={18}/> History</h3>
-         <button onClick={onClose}><X className="text-white" size={20}/></button>
        </div>
        {loading ? (
          <p className="text-gray-400">Loading...</p>
@@ -274,7 +247,7 @@ const Home = () => {
     fetchCards();
   };
 
-  const handleScratch = async (id) => {
+  const handleReveal = async (id) => {
     await fetch(`${API_URL}/cards/${id}/scratch`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -342,32 +315,47 @@ const Home = () => {
         ))}
       </div>
 
-      {/* Play Modal */}
+      {/* New Golden Window Modal */}
       {selectedCard && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-           <div className="relative w-full max-w-sm flex flex-col items-center animate-fadeIn">
-              <button onClick={() => setSelectedCard(null)} className="absolute -top-12 right-0 bg-white/10 p-2 rounded-full text-white hover:bg-white/30"><X size={24} /></button>
-              <div className="relative w-full aspect-[3/4]"> 
+           {/* The Vertical Rectangle Container */}
+           <div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black animate-fadeIn">
+              
+              {/* Close Button */}
+              <button 
+                onClick={() => setSelectedCard(null)} 
+                className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"
+              >
+                <X size={24} />
+              </button>
+
+              {/* Top 80%: Game Area */}
+              <div className="h-[80%] relative border-b-4 border-gold"> 
                  {showHistory ? (
-                    <HistoryList cardId={selectedCard.id} onClose={() => setShowHistory(false)} />
+                    <HistoryList cardId={selectedCard.id} />
                  ) : (
-                    <ScratchCard 
+                    <RevealCard 
                       id={selectedCard.id} 
                       image={selectedCard.filepath} 
-                      onScratchComplete={() => handleScratch(selectedCard.id)}
+                      onRevealComplete={() => handleReveal(selectedCard.id)}
                       isHidden={hideTrigger}
                     />
                  )}
               </div>
-              <button 
-                onClick={() => setShowHistory(!showHistory)}
-                className="mt-6 flex items-center gap-2 text-gold text-xl bg-black/50 px-6 py-2 rounded-full border border-gold/30 hover:bg-white/10 transition"
-              >
-                <Heart size={20} className="fill-lipstick text-lipstick"/> 
-                <span>
-                    {showHistory ? "Back to Card" : `Revealed ${cards.find(c => c.id === selectedCard.id)?.scratched_count || 0} times`}
-                </span>
-              </button>
+
+              {/* Bottom 20%: Stats & Controls */}
+              <div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4">
+                <button 
+                  onClick={() => setShowHistory(!showHistory)}
+                  className="flex items-center gap-2 text-gold text-xl bg-white/5 px-6 py-2 rounded-full border border-gold/30 hover:bg-gold/20 transition active:scale-95"
+                >
+                  <Heart size={20} className={showHistory ? "text-gray-400" : "fill-lipstick text-lipstick"}/> 
+                  <span>
+                      {showHistory ? "Back to Card" : `Revealed ${cards.find(c => c.id === selectedCard.id)?.scratched_count || 0} times`}
+                  </span>
+                </button>
+              </div>
+
            </div>
         </div>
       )}
@@ -375,7 +363,7 @@ const Home = () => {
       {/* Delete Confirmation Modal */}
       {deleteId && (
         <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center">
+          <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center shadow-2xl">
             <Trash2 size={40} className="mx-auto text-lipstick mb-4" />
             <h3 className="text-white text-xl mb-4">Delete this card?</h3>
             <div className="flex justify-center gap-4">
