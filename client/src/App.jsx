@@ -1,26 +1,42 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, EyeOff, Heart, Maximize2, Clock, Calendar } from 'lucide-react';
-
-// --- Theme Colors ---
-// Primary: #800020 (Burgundy)
-// Accent: #301934 (Deep Eggplant)
-// Text: Gold/Neutral
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, EyeOff, Heart, Maximize2, Clock, Calendar, Trash2 } from 'lucide-react';
 
 const API_URL = '/api';
 
+// --- Hooks ---
+const useLongPress = (callback = () => {}, ms = 800) => {
+  const [startLongPress, setStartLongPress] = useState(false);
+
+  useEffect(() => {
+    let timerId;
+    if (startLongPress) {
+      timerId = setTimeout(callback, ms);
+    } else {
+      clearTimeout(timerId);
+    }
+    return () => clearTimeout(timerId);
+  }, [startLongPress, callback, ms]);
+
+  return {
+    onMouseDown: () => setStartLongPress(true),
+    onMouseUp: () => setStartLongPress(false),
+    onMouseLeave: () => setStartLongPress(false),
+    onTouchStart: () => setStartLongPress(true),
+    onTouchEnd: () => setStartLongPress(false),
+  };
+};
+
 // --- Components ---
 
-// 1. Scratch Card Component (Canvas Logic)
+// 1. Scratch Card Component
 const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
   const canvasRef = useRef(null);
   const [isRevealed, setIsRevealed] = useState(false);
   const [ctx, setCtx] = useState(null);
 
   useEffect(() => {
-    if (isHidden) {
-      resetCard();
-    }
+    if (isHidden) resetCard();
   }, [isHidden]);
 
   useEffect(() => {
@@ -35,35 +51,27 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const context = canvas.getContext('2d');
-    
-    // Ensure canvas is clean
     context.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Set Silver/Gold scratch layer
     context.globalCompositeOperation = 'source-over';
-    context.fillStyle = '#C0C0C0'; // Silver scratch color
+    context.fillStyle = '#C0C0C0';
     context.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Pattern or Texture for scratch surface
     context.font = '30px Caveat';
     context.fillStyle = '#333';
     context.textAlign = "center";
     context.fillText("Scratch Me!", canvas.width / 2, canvas.height / 2);
-    
     setIsRevealed(false);
   };
 
   const handleScratch = (e) => {
-    // Critical: Prevent scrolling while scratching
-    if (e.cancelable) e.preventDefault(); 
-    if (e.stopPropagation) e.stopPropagation();
+    // Prevent default to stop scrolling
+    if(e.cancelable) e.preventDefault();
 
     if (isRevealed || !ctx) return;
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     
     let clientX, clientY;
-    if (e.changedTouches) {
+    if (e.changedTouches && e.changedTouches.length > 0) {
        clientX = e.changedTouches[0].clientX;
        clientY = e.changedTouches[0].clientY;
     } else {
@@ -76,7 +84,7 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
 
     ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
-    ctx.arc(x, y, 30, 0, Math.PI * 2); // Increased brush size for better feel
+    ctx.arc(x, y, 30, 0, Math.PI * 2);
     ctx.fill();
 
     checkReveal();
@@ -90,25 +98,22 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
 
   return (
     <div className="relative w-full h-full rounded-xl overflow-hidden shadow-2xl border-4 border-gold bg-white">
-      {/* Background Image (Hidden behind canvas) */}
       <img src={image} alt="Secret" className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none" />
-      
-      {/* Scratch Canvas */}
       <canvas
         ref={canvasRef}
         width={320}
         height={480}
         className="absolute inset-0 cursor-pointer touch-none"
-        style={{ touchAction: 'none' }} // Critical for mobile
+        style={{ touchAction: 'none' }}
         onMouseMove={(e) => e.buttons === 1 && handleScratch(e)}
-        onTouchMove={(e) => handleScratch(e)}
+        onTouchMove={handleScratch}
         onMouseDown={handleScratch}
       />
     </div>
   );
 };
 
-// 2. History List Component
+// 2. History List Component (Timezone Fixed)
 const HistoryList = ({ cardId, onClose }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -139,7 +144,8 @@ const HistoryList = ({ cardId, onClose }) => {
        ) : (
          <ul className="space-y-3">
            {history.map((h, i) => {
-             const date = new Date(h.timestamp);
+             // Appending 'Z' forces JS to treat SQL string as UTC, then converts to local device time (IST)
+             const date = new Date(h.timestamp + 'Z'); 
              return (
                <li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm">
                  <span className="text-white flex items-center gap-2">
@@ -153,6 +159,27 @@ const HistoryList = ({ cardId, onClose }) => {
            })}
          </ul>
        )}
+    </div>
+  );
+};
+
+// 3. PDF Viewer Modal
+const PDFViewer = ({ url, title, onClose }) => {
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
+      <div className="flex justify-between items-center p-4 bg-gray-900 border-b border-gold/20">
+        <h3 className="text-gold text-xl truncate pr-4">{title}</h3>
+        <button onClick={onClose} className="p-2 bg-burgundy rounded-full text-white hover:bg-lipstick">
+          <X size={24} />
+        </button>
+      </div>
+      <div className="flex-1 w-full h-full bg-gray-800 flex items-center justify-center">
+        <iframe 
+          src={url} 
+          className="w-full h-full border-0" 
+          title="PDF Viewer"
+        ></iframe>
+      </div>
     </div>
   );
 };
@@ -177,7 +204,7 @@ const Auth = ({ setUser }) => {
       localStorage.setItem('user', JSON.stringify(data.user));
       setUser(data.user);
     } else if (data.success) {
-      setIsLogin(true); // Switch to login after register
+      setIsLogin(true); 
     } else {
       alert(data.error);
     }
@@ -218,7 +245,8 @@ const Home = () => {
   const [cards, setCards] = useState([]);
   const [hideTrigger, setHideTrigger] = useState(0);
   const [selectedCard, setSelectedCard] = useState(null); 
-  const [showHistory, setShowHistory] = useState(false); // Toggle for history view
+  const [showHistory, setShowHistory] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
 
   useEffect(() => {
     fetchCards();
@@ -254,6 +282,16 @@ const Home = () => {
     setCards(prev => prev.map(c => c.id === id ? {...c, scratched_count: c.scratched_count + 1} : c));
   };
 
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    await fetch(`${API_URL}/cards/${deleteId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    setDeleteId(null);
+    fetchCards();
+  };
+
   const shuffleCards = () => {
     setCards([...cards].sort(() => Math.random() - 0.5));
   };
@@ -261,6 +299,25 @@ const Home = () => {
   const openCard = (card) => {
     setSelectedCard(card);
     setShowHistory(false);
+  };
+
+  // Card Item Component with Long Press
+  const CardItem = ({ card }) => {
+    const longPressProps = useLongPress(() => {
+      setDeleteId(card.id);
+    }, 800);
+
+    return (
+      <div 
+        {...longPressProps}
+        onClick={() => !deleteId && openCard(card)}
+        className="aspect-[3/4] bg-gradient-to-br from-gray-800 to-black rounded-lg border-2 border-gold/50 hover:border-lipstick cursor-pointer flex flex-col items-center justify-center relative overflow-hidden transition transform hover:scale-105 shadow-lg select-none"
+      >
+        <div className="absolute inset-0 bg-pattern opacity-20"></div>
+        <Maximize2 className="text-gold mb-2" size={32} />
+        <span className="text-gold font-caveat text-xl">Tap to Play</span>
+      </div>
+    );
   };
 
   return (
@@ -281,32 +338,15 @@ const Home = () => {
       {/* Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {cards.map(card => (
-          <div 
-            key={card.id} 
-            onClick={() => openCard(card)}
-            className="aspect-[3/4] bg-gradient-to-br from-gray-800 to-black rounded-lg border-2 border-gold/50 hover:border-lipstick cursor-pointer flex flex-col items-center justify-center relative overflow-hidden transition transform hover:scale-105 shadow-lg"
-          >
-            <div className="absolute inset-0 bg-pattern opacity-20"></div>
-            <Maximize2 className="text-gold mb-2" size={32} />
-            <span className="text-gold font-caveat text-xl">Tap to Play</span>
-          </div>
+          <CardItem key={card.id} card={card} />
         ))}
       </div>
 
-      {/* Modal Overlay */}
+      {/* Play Modal */}
       {selectedCard && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
            <div className="relative w-full max-w-sm flex flex-col items-center animate-fadeIn">
-              
-              {/* Close Button */}
-              <button 
-                onClick={() => setSelectedCard(null)} 
-                className="absolute -top-12 right-0 bg-white/10 p-2 rounded-full text-white hover:bg-white/30"
-              >
-                <X size={24} />
-              </button>
-
-              {/* The Game Card Container */}
+              <button onClick={() => setSelectedCard(null)} className="absolute -top-12 right-0 bg-white/10 p-2 rounded-full text-white hover:bg-white/30"><X size={24} /></button>
               <div className="relative w-full aspect-[3/4]"> 
                  {showHistory ? (
                     <HistoryList cardId={selectedCard.id} onClose={() => setShowHistory(false)} />
@@ -319,8 +359,6 @@ const Home = () => {
                     />
                  )}
               </div>
-
-              {/* Stats - Clickable for History */}
               <button 
                 onClick={() => setShowHistory(!showHistory)}
                 className="mt-6 flex items-center gap-2 text-gold text-xl bg-black/50 px-6 py-2 rounded-full border border-gold/30 hover:bg-white/10 transition"
@@ -333,12 +371,27 @@ const Home = () => {
            </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteId && (
+        <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center">
+            <Trash2 size={40} className="mx-auto text-lipstick mb-4" />
+            <h3 className="text-white text-xl mb-4">Delete this card?</h3>
+            <div className="flex justify-center gap-4">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button>
+              <button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 const Books = () => {
   const [books, setBooks] = useState([]);
+  const [selectedBook, setSelectedBook] = useState(null);
 
   useEffect(() => {
     const loadBooks = async () => {
@@ -353,7 +406,6 @@ const Books = () => {
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
-    
     for(const file of files) {
         const formData = new FormData();
         formData.append('file', file);
@@ -378,24 +430,27 @@ const Books = () => {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {books.map(book => (
-          <a 
+          <div 
             key={book.id} 
-            href={book.filepath} 
-            target="_blank" 
-            rel="noopener noreferrer" 
-            download
-            className="block group text-decoration-none"
+            onClick={() => setSelectedBook(book)}
+            className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md group"
           >
-            <div className="bg-gray-900 border border-gold/20 p-6 rounded-lg group-hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md">
-              <Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/>
-              <div className="overflow-hidden">
-                <h3 className="text-xl text-white truncate w-full">{book.title}</h3>
-                <p className="text-gray-500 text-sm group-hover:text-gold">Tap to open / download</p>
-              </div>
+            <Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/>
+            <div className="overflow-hidden">
+              <h3 className="text-xl text-white truncate w-full">{book.title}</h3>
+              <p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p>
             </div>
-          </a>
+          </div>
         ))}
       </div>
+
+      {selectedBook && (
+        <PDFViewer 
+          url={selectedBook.filepath} 
+          title={selectedBook.title} 
+          onClose={() => setSelectedBook(null)} 
+        />
+      )}
     </div>
   );
 };
@@ -443,7 +498,6 @@ const Layout = ({ children, user, logout }) => {
 
   return (
     <div className="min-h-screen bg-black text-white font-caveat selection:bg-lipstick">
-      {/* Top Bar */}
       <header className="fixed top-0 w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-3 flex justify-between items-center shadow-lg">
         <div className="flex items-center gap-2">
           <img src="/apple-touch-icon.png" alt="Logo" className="w-8 h-8 rounded-full border border-gold shadow-md" />
@@ -458,8 +512,6 @@ const Layout = ({ children, user, logout }) => {
           </div>}
         </button>
       </header>
-
-      {/* Mobile Menu */}
       {menuOpen && (
         <div className="fixed top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-40 p-4 shadow-2xl transform transition-transform">
            <div className="flex flex-col gap-4 text-xl">
@@ -468,13 +520,9 @@ const Layout = ({ children, user, logout }) => {
            </div>
         </div>
       )}
-
-      {/* Content */}
       <main className="pt-20 min-h-screen bg-gradient-to-b from-black via-eggplant/20 to-black">
         {children}
       </main>
-
-      {/* Bottom Nav */}
       <nav className="fixed bottom-0 w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around py-3 pb-safe z-50">
         <Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}>
           <Layers size={24} />
@@ -491,20 +539,16 @@ const Layout = ({ children, user, logout }) => {
 
 export default function App() {
   const [user, setUser] = useState(null);
-  
   useEffect(() => {
     const saved = localStorage.getItem('user');
     if (saved) setUser(JSON.parse(saved));
   }, []);
-
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
   };
-
   if (!user) return <Auth setUser={setUser} />;
-
   return (
     <Router>
       <Layout user={user} logout={logout}>

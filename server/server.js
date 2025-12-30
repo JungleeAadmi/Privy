@@ -16,13 +16,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../data');
 const DB_PATH = path.join(DATA_DIR, 'privy.db');
-const SECRET_KEY = 'privy_super_secret_love_key'; // Change in prod
+const SECRET_KEY = 'privy_super_secret_love_key'; 
 
 // --- Middleware ---
 app.use(express.json());
 app.use(cors());
 app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads')));
-app.use(express.static(path.join(__dirname, '../client/dist'))); // Serve React build
+app.use(express.static(path.join(__dirname, '../client/dist'))); 
 
 // --- Database Setup ---
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -34,7 +34,6 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 
 // Init Tables
 db.serialize(() => {
-    // Users Table
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
@@ -45,14 +44,12 @@ db.serialize(() => {
         avatar TEXT
     )`);
 
-    // Scratch Cards Table
     db.run(`CREATE TABLE IF NOT EXISTS cards (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         filepath TEXT,
         scratched_count INTEGER DEFAULT 0
     )`);
     
-    // History Table (New)
     db.run(`CREATE TABLE IF NOT EXISTS card_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         card_id INTEGER,
@@ -60,7 +57,6 @@ db.serialize(() => {
         FOREIGN KEY(card_id) REFERENCES cards(id)
     )`);
     
-    // Books Table
     db.run(`CREATE TABLE IF NOT EXISTS books (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT,
@@ -77,7 +73,6 @@ const storage = multer.diskStorage({
         cb(null, dir);
     },
     filename: (req, file, cb) => {
-        // Sanitize filename to avoid encoding issues
         const safeName = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
         cb(null, Date.now() + '-' + safeName);
     }
@@ -151,9 +146,37 @@ app.post('/api/cards', auth, upload.single('file'), (req, res) => {
     });
 });
 
+app.delete('/api/cards/:id', auth, (req, res) => {
+    const id = req.params.id;
+    db.get(`SELECT filepath FROM cards WHERE id = ?`, [id], (err, row) => {
+        if (!row) return res.status(404).json({error: 'Card not found'});
+        
+        // Try to delete file
+        const fullPath = path.join(DATA_DIR, row.filepath); // filepath already includes /uploads/...
+        // The filepath in DB starts with /uploads, but DATA_DIR points to data.
+        // We mounted /uploads static route to DATA_DIR/uploads.
+        // So we need to construct the absolute path carefully.
+        // If row.filepath is "/uploads/cards/file.png" and DATA_DIR is "/opt/privy/data"
+        // We need "/opt/privy/data/uploads/cards/file.png".
+        const cleanPath = row.filepath.replace('/uploads/', '');
+        const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
+
+        if (fs.existsSync(absPath)) {
+            fs.unlinkSync(absPath);
+        }
+
+        db.serialize(() => {
+            db.run(`DELETE FROM card_history WHERE card_id = ?`, [id]);
+            db.run(`DELETE FROM cards WHERE id = ?`, [id], (err) => {
+                if(err) return res.status(500).json({error: err.message});
+                res.json({success: true});
+            });
+        });
+    });
+});
+
 app.post('/api/cards/:id/scratch', auth, (req, res) => {
     const cardId = req.params.id;
-    // Log history and increment count
     db.serialize(() => {
         db.run(`INSERT INTO card_history (card_id) VALUES (?)`, [cardId]);
         db.run(`UPDATE cards SET scratched_count = scratched_count + 1 WHERE id = ?`, [cardId], (err) => {
@@ -191,8 +214,6 @@ app.post('/api/books', auth, upload.single('file'), (req, res) => {
     });
 });
 
-
-// Serve React for any other route
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
