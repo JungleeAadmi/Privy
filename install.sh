@@ -8,13 +8,15 @@ echo "🍷 Welcome to Privy Installer..."
 # 1. System Updates & Interactive Timezone
 echo "🔄 Updating system packages..."
 apt-get update && apt-get upgrade -y
+# Install dialog to ensure the UI has the necessary backend tools
+apt-get install -y dialog git
 
 echo "🌍 Setting Timezone..."
-# FIX: Force input from /dev/tty to allow interactive selection even when running via curl
+# FIX: Force input (0), output (1), and error (2) to /dev/tty
+# This ensures the interactive menu works correctly even when piped via curl
 if [ -c /dev/tty ]; then
-    # Ensure TERM is set so the UI renders correctly
     export TERM=${TERM:-xterm}
-    dpkg-reconfigure tzdata < /dev/tty > /dev/tty
+    dpkg-reconfigure tzdata < /dev/tty > /dev/tty 2> /dev/tty
 else
     echo "⚠️  No interactive terminal detected. Skipping timezone setup."
 fi
@@ -30,25 +32,23 @@ DATA_DIR="$APP_DIR/data"
 mkdir -p "$DATA_DIR/uploads/cards"
 mkdir -p "$DATA_DIR/uploads/books"
 
-# Copy files from current location to /opt/privy
-# We assume the script is run from inside the repo folder OR cloned by the installer
+# 4. Handle File Retrieval (Curl vs Local)
 echo "📂 Moving files to $APP_DIR..."
 
-# If running from curl (files not present), we might need to clone.
-# However, based on your workflow, we assume this script is running in a context 
-# where files are present OR you want to clone them now.
-# To make the curl command fully standalone, we should clone if files aren't here.
-
-if [ ! -f "server/server.js" ]; then
-    echo "📥 Cloning repository..."
-    git clone https://github.com/JungleeAadmi/Privy.git temp_privy
-    cp -r temp_privy/* .
-    rm -rf temp_privy
+# Check if we are running locally (files exist) or via curl (need to download)
+if [ -f "server/server.js" ]; then
+    # Local install
+    cp -r . "$APP_DIR/"
+else
+    # Curl install - Download files to a temp location first
+    echo "📥 Downloading application files..."
+    TEMP_DIR=$(mktemp -d)
+    git clone https://github.com/JungleeAadmi/Privy.git "$TEMP_DIR"
+    cp -r "$TEMP_DIR/"* "$APP_DIR/"
+    rm -rf "$TEMP_DIR"
 fi
 
-cp -r . "$APP_DIR/"
-
-# 4. Install App Dependencies
+# 5. Install App Dependencies
 echo "🧱 Installing Application Dependencies..."
 cd "$APP_DIR"
 # Install backend deps
@@ -61,7 +61,7 @@ echo "🎨 Building Frontend..."
 npm run build
 cd ..
 
-# 5. Create Systemd Service (Auto-start on boot)
+# 6. Create Systemd Service (Auto-start on boot)
 echo "⚙️ Creating System Service..."
 cat <<EOF > /etc/systemd/system/privy.service
 [Unit]
@@ -81,7 +81,7 @@ Environment=DATA_DIR=$DATA_DIR
 WantedBy=multi-user.target
 EOF
 
-# 6. Enable and Start
+# 7. Enable and Start
 systemctl daemon-reload
 systemctl enable privy
 systemctl restart privy

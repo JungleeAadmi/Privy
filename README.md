@@ -5,11 +5,11 @@ A self hosted app for couples.
 ## To install
 
 ```
-curl -sSL https://raw.githubusercontent.com/JungleeAadmi/Privy/main/install.sh | sudo bash
+bash <(curl -sSL https://raw.githubusercontent.com/JungleeAadmi/Privy/main/install.sh)
 ```
 
 ## To update
 
 ```
-curl -sSL https://raw.githubusercontent.com/JungleeAadmi/Privy/main/update.sh | sudo bash
+bash <(curl -sSL https://raw.githubusercontent.com/JungleeAadmi/Privy/main/update.sh)
 ```
