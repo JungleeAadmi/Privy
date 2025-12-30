@@ -29,10 +29,13 @@ const useLongPress = (callback = () => {}, ms = 800) => {
 
 // --- Components ---
 
-// 1. Double Tap Reveal Card (Replaces ScratchCard)
+// 1. Triple Tap Reveal Card (Replaces Double Tap)
 const RevealCard = ({ image, id, onRevealComplete, isHidden }) => {
   const [isRevealed, setIsRevealed] = useState(false);
-  const lastTap = useRef(0);
+  
+  // Use refs for tap counting to avoid re-renders during rapid tapping
+  const tapCount = useRef(0);
+  const tapTimer = useRef(null);
 
   useEffect(() => {
     if (isHidden) setIsRevealed(false);
@@ -41,22 +44,28 @@ const RevealCard = ({ image, id, onRevealComplete, isHidden }) => {
   useEffect(() => {
     // Reset when image changes
     setIsRevealed(false);
+    tapCount.current = 0;
   }, [image]);
 
   const handleInteraction = (e) => {
-    // FIX: Using only onClick prevents the "TouchStart + Click" double-fire bug
-    // that was causing single taps to be interpreted as double taps.
-    const now = Date.now();
-    const DOUBLE_PRESS_DELAY = 300; // ms
+    // Clear the reset timer if it exists
+    if (tapTimer.current) clearTimeout(tapTimer.current);
 
-    if (now - lastTap.current < DOUBLE_PRESS_DELAY && now - lastTap.current > 0) {
-      // Double tap detected
+    tapCount.current += 1;
+
+    // Check for Triple Tap (3 taps)
+    if (tapCount.current === 3) {
       if (!isRevealed) {
         setIsRevealed(true);
         onRevealComplete(id);
       }
+      tapCount.current = 0; // Reset after reveal
+    } else {
+      // Set a timer to reset the count if the next tap doesn't happen quickly (400ms window)
+      tapTimer.current = setTimeout(() => {
+        tapCount.current = 0;
+      }, 400); 
     }
-    lastTap.current = now;
   };
 
   return (
@@ -78,8 +87,8 @@ const RevealCard = ({ image, id, onRevealComplete, isHidden }) => {
             backgroundPosition: 'top left'
           }}
         >
-          <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl border-2 border-gold/50 shadow-[0_0_20px_rgba(255,215,0,0.3)] animate-pulse">
-            <span className="text-gold font-caveat text-3xl drop-shadow-md">Double Tap</span>
+          <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl border-2 border-gold/50 shadow-[0_0_20px_rgba(255,215,0,0.3)] animate-pulse select-none pointer-events-none">
+            <span className="text-gold font-caveat text-3xl drop-shadow-md">Triple Tap</span>
           </div>
         </div>
       )}
@@ -117,7 +126,7 @@ const HistoryList = ({ cardId, onClose }) => {
        ) : (
          <ul className="space-y-3">
            {history.map((h, i) => {
-             // Appending 'Z' forces JS to treat SQL string as UTC, then converts to local device time (IST)
+             // Appending 'Z' forces JS to treat SQL string as UTC, then converts to local device time
              const date = new Date(h.timestamp + 'Z'); 
              return (
                <li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm">
@@ -136,22 +145,34 @@ const HistoryList = ({ cardId, onClose }) => {
   );
 };
 
-// 3. PDF Viewer Modal
+// 3. PDF Viewer Modal (Improved for Mobile)
 const PDFViewer = ({ url, title, onClose }) => {
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
-      <div className="flex justify-between items-center p-4 bg-gray-900 border-b border-gold/20">
-        <h3 className="text-gold text-xl truncate pr-4">{title}</h3>
-        <button onClick={onClose} className="p-2 bg-burgundy rounded-full text-white hover:bg-lipstick">
+      <div className="flex justify-between items-center p-4 bg-gray-900 border-b border-gold/20 safe-top">
+        <h3 className="text-gold text-xl truncate pr-4 max-w-[80%]">{title}</h3>
+        <button onClick={onClose} className="p-2 bg-burgundy rounded-full text-white hover:bg-lipstick shadow-lg">
           <X size={24} />
         </button>
       </div>
-      <div className="flex-1 w-full h-full bg-gray-800 flex items-center justify-center">
-        <iframe 
-          src={url} 
-          className="w-full h-full border-0" 
-          title="PDF Viewer"
-        ></iframe>
+      <div className="flex-1 w-full h-full bg-gray-800 flex items-center justify-center p-2 overflow-hidden">
+        {/* Using <object> is generally better than iframe for mobile PDF embedding compliance */}
+        <object 
+          data={url} 
+          type="application/pdf" 
+          className="w-full h-full rounded-lg border border-gold/20"
+        >
+            <div className="text-white text-center flex flex-col items-center justify-center h-full gap-4">
+                <p>Preview not supported on this device.</p>
+                <a 
+                  href={url} 
+                  download 
+                  className="bg-gold text-black font-bold py-2 px-6 rounded-full hover:bg-yellow-500 transition"
+                >
+                  Download PDF
+                </a>
+            </div>
+        </object>
       </div>
     </div>
   );
