@@ -44,11 +44,12 @@ const RevealCard = ({ image, id, onRevealComplete, isHidden }) => {
   }, [image]);
 
   const handleInteraction = (e) => {
-    e.preventDefault(); // Prevent zoom/scroll issues
+    // FIX: Using only onClick prevents the "TouchStart + Click" double-fire bug
+    // that was causing single taps to be interpreted as double taps.
     const now = Date.now();
     const DOUBLE_PRESS_DELAY = 300; // ms
 
-    if (now - lastTap.current < DOUBLE_PRESS_DELAY) {
+    if (now - lastTap.current < DOUBLE_PRESS_DELAY && now - lastTap.current > 0) {
       // Double tap detected
       if (!isRevealed) {
         setIsRevealed(true);
@@ -60,21 +61,20 @@ const RevealCard = ({ image, id, onRevealComplete, isHidden }) => {
 
   return (
     <div 
-      className="relative w-full h-full bg-black select-none overflow-hidden"
+      className="relative w-full h-full bg-black select-none overflow-hidden flex items-center justify-center"
       onClick={handleInteraction}
-      onTouchStart={handleInteraction}
     >
-      {/* The Image (Always rendered, hidden by overlay if not revealed) */}
-      <img src={image} alt="Secret" className="absolute inset-0 w-full h-full object-cover" />
+      {/* The Image (Fits to window) */}
+      <img src={image} alt="Secret" className="max-w-full max-h-full object-contain pointer-events-none" />
 
       {/* The Chess Pattern Overlay */}
       {!isRevealed && (
         <div 
           className="absolute inset-0 z-10 flex items-center justify-center p-4"
           style={{
-            // CSS Chess Board Pattern
-            backgroundImage: `conic-gradient(#2a2a2a 0.25turn, #111 0.25turn 0.5turn, #2a2a2a 0.5turn 0.75turn, #111 0.75turn)`,
-            backgroundSize: '40px 40px',
+            // CSS Chess Board Pattern: Purple (#301934) and Black (#000)
+            backgroundImage: `conic-gradient(#301934 0.25turn, #000 0.25turn 0.5turn, #301934 0.5turn 0.75turn, #000 0.75turn)`,
+            backgroundSize: '50px 50px',
             backgroundPosition: 'top left'
           }}
         >
@@ -330,7 +330,7 @@ const Home = () => {
               </button>
 
               {/* Top 80%: Game Area */}
-              <div className="h-[80%] relative border-b-4 border-gold"> 
+              <div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center"> 
                  {showHistory ? (
                     <HistoryList cardId={selectedCard.id} />
                  ) : (
@@ -511,7 +511,9 @@ const Layout = ({ children, user, logout }) => {
       <main className="pt-20 min-h-screen bg-gradient-to-b from-black via-eggplant/20 to-black">
         {children}
       </main>
-      <nav className="fixed bottom-0 w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around py-3 pb-safe z-50">
+      
+      {/* Bottom Nav - Adjusted for iPhone (pb-safe + extra padding) */}
+      <nav className="fixed bottom-0 w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around py-4 pb-safe z-50">
         <Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}>
           <Layers size={24} />
           <span className="text-xs">Cards</span>
