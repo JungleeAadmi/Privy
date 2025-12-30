@@ -509,7 +509,7 @@ const Layout = ({ children, user, logout }) => {
           <img src="/apple-touch-icon.png" alt="Logo" className="w-10 h-10 rounded-full border border-gold shadow-md" />
           <div className="flex flex-col">
             <h1 className="text-2xl text-gold tracking-widest leading-none">Privy</h1>
-            <span className="text-sm text-gray-400 font-sans">@{user?.username}</span>
+            <span className="text-xl text-gray-400 -mt-1">@{user?.username}</span>
           </div>
         </div>
         
@@ -533,8 +533,8 @@ const Layout = ({ children, user, logout }) => {
         {children}
       </main>
       
-      {/* Bottom Nav - Adjusted for iPhone (pb-safe + extra padding) */}
-      <nav className="fixed bottom-0 w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around py-4 pb-safe z-50">
+      {/* Bottom Nav - Adjusted for iPhone with extra bottom padding */}
+      <nav className="fixed bottom-0 w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50">
         <Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}>
           <Layers size={24} />
           <span className="text-xs">Cards</span>
