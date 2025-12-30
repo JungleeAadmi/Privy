@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2 } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, MoreVertical } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -247,16 +247,11 @@ const Home = () => {
       if (res.ok) {
         const data = await res.json();
         setCards(prevCards => {
-          // Only update if data length changed to avoid constant reshuffling of the view
-          // or ideally, we just update the counts if the IDs match
           if (JSON.stringify(prevCards.map(c => c.id)) !== JSON.stringify(data.map(c => c.id))) {
-             // New cards added or removed? Shuffle.
              return data.sort(() => Math.random() - 0.5);
           }
-          // Just update counts/content without shuffling
           return data.map(newItem => {
              const oldItem = prevCards.find(p => p.id === newItem.id);
-             // Preserve order of old items if they exist
              return oldItem ? { ...newItem } : newItem; 
           });
         });
@@ -268,7 +263,6 @@ const Home = () => {
 
   useEffect(() => {
     fetchCards();
-    // REAL-TIME SYNC: Poll every 5 seconds
     const interval = setInterval(fetchCards, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -293,7 +287,6 @@ const Home = () => {
       method: 'POST',
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
     });
-    // Optimistic update
     setCards(prev => prev.map(c => c.id === id ? {...c, scratched_count: c.scratched_count + 1} : c));
   };
 
@@ -316,21 +309,32 @@ const Home = () => {
     setShowHistory(false);
   };
 
-  // Card Item Component with Long Press
+  // Card Item Component with Double Tap Play Logic & Long Press Delete
   const CardItem = ({ card }) => {
+    const lastTap = useRef(0);
+
     const longPressProps = useLongPress(() => {
       setDeleteId(card.id);
     }, 800);
 
+    const handleDoubleTap = (e) => {
+      const now = Date.now();
+      const DOUBLE_PRESS_DELAY = 300;
+      if (now - lastTap.current < DOUBLE_PRESS_DELAY && now - lastTap.current > 0) {
+         if (!deleteId) openCard(card);
+      }
+      lastTap.current = now;
+    };
+
     return (
       <div 
         {...longPressProps}
-        onClick={() => !deleteId && openCard(card)}
+        onClick={handleDoubleTap}
         className="aspect-[3/4] bg-gradient-to-br from-gray-800 to-black rounded-lg border-2 border-gold/50 hover:border-lipstick cursor-pointer flex flex-col items-center justify-center relative overflow-hidden transition transform hover:scale-105 shadow-lg select-none"
       >
         <div className="absolute inset-0 bg-pattern opacity-20"></div>
         <Maximize2 className="text-gold mb-2" size={32} />
-        <span className="text-gold font-caveat text-xl">Tap to Play</span>
+        <span className="text-gold font-caveat text-xl">Double Tap to Play</span>
       </div>
     );
   };
@@ -420,6 +424,9 @@ const Home = () => {
 const Books = () => {
   const [books, setBooks] = useState([]);
   const [selectedBook, setSelectedBook] = useState(null);
+  const [menuTarget, setMenuTarget] = useState(null); // Book selected for long press options
+  const [renameText, setRenameText] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
 
   const loadBooks = async () => {
     try {
@@ -434,7 +441,6 @@ const Books = () => {
 
   useEffect(() => {
     loadBooks();
-    // REAL-TIME SYNC: Poll every 5 seconds
     const interval = setInterval(loadBooks, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -451,8 +457,55 @@ const Books = () => {
           body: formData
         });
     }
-    // No reload needed due to polling, but immediate fetch is nice
     loadBooks();
+  };
+
+  const handleRename = async () => {
+    if (!menuTarget || !renameText.trim()) return;
+    await fetch(`${API_URL}/books/${menuTarget.id}`, {
+      method: 'PUT',
+      headers: { 
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('token')}` 
+      },
+      body: JSON.stringify({ title: renameText })
+    });
+    setMenuTarget(null);
+    setIsRenaming(false);
+    loadBooks();
+  };
+
+  const handleDelete = async () => {
+    if (!menuTarget) return;
+    await fetch(`${API_URL}/books/${menuTarget.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    setMenuTarget(null);
+    loadBooks();
+  };
+
+  // Helper component for Book Item to handle long press
+  const BookItem = ({ book }) => {
+    const longPressProps = useLongPress(() => {
+      setMenuTarget(book);
+      setRenameText(book.title);
+      setIsRenaming(false); // Reset to options view initially
+    }, 800);
+
+    return (
+      <div 
+        {...longPressProps}
+        onClick={() => !menuTarget && setSelectedBook(book)}
+        className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md group select-none"
+      >
+        <Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/>
+        <div className="overflow-hidden">
+          <h3 className="text-xl text-white truncate w-full">{book.title}</h3>
+          <p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -467,17 +520,7 @@ const Books = () => {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {books.map(book => (
-          <div 
-            key={book.id} 
-            onClick={() => setSelectedBook(book)}
-            className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md group"
-          >
-            <Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/>
-            <div className="overflow-hidden">
-              <h3 className="text-xl text-white truncate w-full">{book.title}</h3>
-              <p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p>
-            </div>
-          </div>
+          <BookItem key={book.id} book={book} />
         ))}
       </div>
 
@@ -487,6 +530,42 @@ const Books = () => {
           title={selectedBook.title} 
           onClose={() => setSelectedBook(null)} 
         />
+      )}
+
+      {/* Book Options Modal */}
+      {menuTarget && (
+        <div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-72 text-center shadow-2xl">
+            <h3 className="text-gold text-xl mb-4 truncate">{menuTarget.title}</h3>
+            
+            {isRenaming ? (
+              <div className="space-y-4">
+                <input 
+                  autoFocus
+                  className="w-full p-2 bg-black border border-gold rounded text-white"
+                  value={renameText}
+                  onChange={(e) => setRenameText(e.target.value)}
+                />
+                <div className="flex justify-center gap-2">
+                  <button onClick={() => setIsRenaming(false)} className="px-3 py-2 rounded bg-gray-700 text-white text-sm">Cancel</button>
+                  <button onClick={handleRename} className="px-3 py-2 rounded bg-gold text-black text-sm font-bold">Save</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <button onClick={() => setIsRenaming(true)} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-white w-full">
+                  <Edit2 size={18} /> Rename
+                </button>
+                <button onClick={handleDelete} className="flex items-center justify-center gap-2 p-3 rounded bg-red-900/50 hover:bg-red-900 text-white w-full">
+                  <Trash2 size={18} /> Delete
+                </button>
+                <button onClick={() => setMenuTarget(null)} className="p-2 mt-2 rounded text-gray-400 hover:text-white text-sm">
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

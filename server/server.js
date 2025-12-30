@@ -214,6 +214,33 @@ app.post('/api/books', auth, upload.single('file'), (req, res) => {
     });
 });
 
+app.put('/api/books/:id', auth, (req, res) => {
+    const { title } = req.body;
+    db.run(`UPDATE books SET title = ? WHERE id = ?`, [title, req.params.id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
+app.delete('/api/books/:id', auth, (req, res) => {
+    const id = req.params.id;
+    db.get(`SELECT filepath FROM books WHERE id = ?`, [id], (err, row) => {
+        if (!row) return res.status(404).json({error: 'Book not found'});
+        
+        const cleanPath = row.filepath.replace('/uploads/', '');
+        const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
+
+        if (fs.existsSync(absPath)) {
+            fs.unlinkSync(absPath);
+        }
+
+        db.run(`DELETE FROM books WHERE id = ?`, [id], (err) => {
+            if(err) return res.status(500).json({error: err.message});
+            res.json({success: true});
+        });
+    });
+});
+
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
