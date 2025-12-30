@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, EyeOff, Heart } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, EyeOff, Heart, Maximize2 } from 'lucide-react';
 
 // --- Theme Colors ---
 // Primary: #800020 (Burgundy)
@@ -28,6 +28,8 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
     if (!canvas) return;
     const context = canvas.getContext('2d');
     setCtx(context);
+    
+    // Load image to ensure aspect ratio or just fill
     resetCard();
   }, [image]);
 
@@ -36,29 +38,47 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
     if (!canvas) return;
     const context = canvas.getContext('2d');
     
+    // Ensure canvas is clean
+    context.clearRect(0, 0, canvas.width, canvas.height);
+
     // Set Silver/Gold scratch layer
     context.globalCompositeOperation = 'source-over';
     context.fillStyle = '#C0C0C0'; // Silver scratch color
     context.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Add text "Scratch Me"
-    context.font = '20px Caveat';
+    // Pattern or Texture for scratch surface (Optional aesthetics)
+    context.fillStyle = '#A9A9A9';
+    context.font = '30px Caveat';
     context.fillStyle = '#333';
-    context.fillText("Scratch to Reveal", 60, 100);
+    context.textAlign = "center";
+    context.fillText("Scratch Me!", canvas.width / 2, canvas.height / 2);
+    
     setIsRevealed(false);
   };
 
   const handleScratch = (e) => {
+    // Prevent default to stop scrolling on mobile
+    // e.preventDefault(); // Moved to event listener options or strict handler
+
     if (isRevealed || !ctx) return;
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     
-    const x = (e.clientX || e.touches[0].clientX) - rect.left;
-    const y = (e.clientY || e.touches[0].clientY) - rect.top;
+    let clientX, clientY;
+    if (e.changedTouches) {
+       clientX = e.changedTouches[0].clientX;
+       clientY = e.changedTouches[0].clientY;
+    } else {
+       clientX = e.clientX;
+       clientY = e.clientY;
+    }
+
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
 
     ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
-    ctx.arc(x, y, 20, 0, Math.PI * 2);
+    ctx.arc(x, y, 25, 0, Math.PI * 2); // Increased brush size
     ctx.fill();
 
     checkReveal();
@@ -66,26 +86,25 @@ const ScratchCard = ({ image, id, onScratchComplete, isHidden }) => {
 
   const checkReveal = () => {
     if (isRevealed) return;
-    // Simple check: if enough pixels are transparent
-    // For performance, we just trigger complete on first scratch interaction for the counter
-    // In a real app, you'd calculate pixel percentage
+    // We trigger the DB count update on the first valid scratch interaction
     onScratchComplete(id);
     setIsRevealed(true); 
   };
 
   return (
-    <div className="relative w-64 h-64 m-4 rounded-xl overflow-hidden shadow-2xl border-4 border-gold">
+    <div className="relative w-full h-full rounded-xl overflow-hidden shadow-2xl border-4 border-gold bg-white">
       {/* Background Image (Hidden behind canvas) */}
-      <img src={image} alt="Secret" className="absolute inset-0 w-full h-full object-cover" />
+      <img src={image} alt="Secret" className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none" />
       
       {/* Scratch Canvas */}
       <canvas
         ref={canvasRef}
-        width={256}
-        height={256}
+        width={320}
+        height={480}
         className="absolute inset-0 cursor-pointer touch-none"
+        style={{ touchAction: 'none' }} // Critical for mobile
         onMouseMove={(e) => e.buttons === 1 && handleScratch(e)}
-        onTouchMove={handleScratch}
+        onTouchMove={(e) => handleScratch(e)}
         onMouseDown={handleScratch}
       />
     </div>
@@ -152,6 +171,7 @@ const Auth = ({ setUser }) => {
 const Home = () => {
   const [cards, setCards] = useState([]);
   const [hideTrigger, setHideTrigger] = useState(0);
+  const [selectedCard, setSelectedCard] = useState(null); // For Modal
 
   useEffect(() => {
     fetchCards();
@@ -165,29 +185,40 @@ const Home = () => {
   };
 
   const handleUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    await fetch(`${API_URL}/cards`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      body: formData
-    });
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    // Loop through all selected files and upload individually
+    // (This avoids changing backend logic)
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append('file', file);
+      await fetch(`${API_URL}/cards`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: formData
+      });
+    }
     fetchCards();
   };
 
   const handleScratch = async (id) => {
-    // Optimistic UI update could go here
+    // Only update server, UI updates via local logic or refresh
     await fetch(`${API_URL}/cards/${id}/scratch`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
     });
-    fetchCards(); // Refresh counts
+    // We do NOT refresh cards immediately to avoid resetting the view while scratching
+    // But we update the local count for the modal display
+    setCards(prev => prev.map(c => c.id === id ? {...c, scratched_count: c.scratched_count + 1} : c));
   };
 
   const shuffleCards = () => {
     setCards([...cards].sort(() => Math.random() - 0.5));
+  };
+
+  const openCard = (card) => {
+    setSelectedCard(card);
   };
 
   return (
@@ -200,27 +231,60 @@ const Home = () => {
         </div>
         <label className="flex items-center gap-2 bg-burgundy px-4 py-2 rounded-full cursor-pointer hover:bg-lipstick transition shadow-lg">
           <Upload size={18} className="text-white"/>
-          <span className="text-white text-sm font-bold">Add Card</span>
-          <input type="file" className="hidden" accept="image/*" onChange={handleUpload} />
+          <span className="text-white text-sm font-bold">Add Cards</span>
+          {/* Added 'multiple' attribute */}
+          <input type="file" className="hidden" accept="image/*" multiple onChange={handleUpload} />
         </label>
       </div>
 
-      {/* Grid */}
-      <div className="flex flex-wrap justify-center gap-6">
+      {/* Grid: 4 Columns on desktop, 2 on mobile */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {cards.map(card => (
-          <div key={card.id} className="flex flex-col items-center">
-            <ScratchCard 
-              id={card.id} 
-              image={card.filepath} 
-              onScratchComplete={() => handleScratch(card.id)}
-              isHidden={hideTrigger} 
-            />
-            <div className="text-gold text-sm mt-2 flex items-center gap-1">
-              <Heart size={12} className="fill-lipstick text-lipstick"/> Scratched: {card.scratched_count} times
-            </div>
+          <div 
+            key={card.id} 
+            onClick={() => openCard(card)}
+            className="aspect-[3/4] bg-gradient-to-br from-gray-800 to-black rounded-lg border-2 border-gold/50 hover:border-lipstick cursor-pointer flex flex-col items-center justify-center relative overflow-hidden transition transform hover:scale-105 shadow-lg"
+          >
+            {/* Thumbnail / Mystery View */}
+            <div className="absolute inset-0 bg-pattern opacity-20"></div>
+            <Maximize2 className="text-gold mb-2" size={32} />
+            <span className="text-gold font-caveat text-xl">Tap to Play</span>
+            {/* Note: Scratched count removed from grid as requested */}
           </div>
         ))}
       </div>
+
+      {/* Modal Overlay for Playing */}
+      {selectedCard && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+           <div className="relative w-full max-w-sm flex flex-col items-center animate-fadeIn">
+              
+              {/* Close Button */}
+              <button 
+                onClick={() => setSelectedCard(null)} 
+                className="absolute -top-12 right-0 bg-white/10 p-2 rounded-full text-white hover:bg-white/30"
+              >
+                <X size={24} />
+              </button>
+
+              {/* The Game Card */}
+              <div className="w-full aspect-[3/4]"> {/* Vertical Rectangle Ratio */}
+                 <ScratchCard 
+                    id={selectedCard.id} 
+                    image={selectedCard.filepath} 
+                    onScratchComplete={() => handleScratch(selectedCard.id)}
+                    isHidden={hideTrigger}
+                 />
+              </div>
+
+              {/* Stats (Only shown in modal) */}
+              <div className="mt-6 flex items-center gap-2 text-gold text-xl bg-black/50 px-6 py-2 rounded-full border border-gold/30">
+                <Heart size={20} className="fill-lipstick text-lipstick"/> 
+                <span>Revealed {cards.find(c => c.id === selectedCard.id)?.scratched_count || 0} times</span>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -239,15 +303,19 @@ const Books = () => {
   }, []);
 
   const handleUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    await fetch(`${API_URL}/books`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      body: formData
-    });
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    
+    for(const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        await fetch(`${API_URL}/books`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          body: formData
+        });
+    }
+    // Simple reload to refresh list
     window.location.reload();
   };
 
@@ -257,18 +325,24 @@ const Books = () => {
         <h2 className="text-3xl text-gold">Library</h2>
         <label className="flex items-center gap-2 bg-burgundy px-4 py-2 rounded-full cursor-pointer hover:bg-lipstick">
           <Upload size={18} className="text-white"/>
-          <span className="text-white text-sm">Add Book (PDF)</span>
-          <input type="file" className="hidden" accept="application/pdf" onChange={handleUpload} />
+          <span className="text-white text-sm">Add Books (PDF)</span>
+          <input type="file" className="hidden" accept="application/pdf" multiple onChange={handleUpload} />
         </label>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {books.map(book => (
-          <a key={book.id} href={book.filepath} target="_blank" rel="noopener noreferrer" className="block">
-            <div className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4">
-              <Book size={32} className="text-burgundy"/>
+          <a 
+            key={book.id} 
+            href={book.filepath} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="block group"
+          >
+            <div className="bg-gray-900 border border-gold/20 p-6 rounded-lg group-hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md">
+              <Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/>
               <div>
                 <h3 className="text-xl text-white truncate w-48">{book.title}</h3>
-                <p className="text-gray-500 text-sm">Tap to read</p>
+                <p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p>
               </div>
             </div>
           </a>
