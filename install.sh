@@ -8,8 +8,16 @@ echo "🍷 Welcome to Privy Installer..."
 # 1. System Updates & Interactive Timezone
 echo "🔄 Updating system packages..."
 apt-get update && apt-get upgrade -y
+
 echo "🌍 Setting Timezone..."
-dpkg-reconfigure tzdata
+# FIX: Force input from /dev/tty to allow interactive selection even when running via curl
+if [ -c /dev/tty ]; then
+    # Ensure TERM is set so the UI renders correctly
+    export TERM=${TERM:-xterm}
+    dpkg-reconfigure tzdata < /dev/tty > /dev/tty
+else
+    echo "⚠️  No interactive terminal detected. Skipping timezone setup."
+fi
 
 # 2. Install Dependencies (Node.js, NPM, SQLite3)
 echo "📦 Installing Node.js and system tools..."
@@ -22,9 +30,22 @@ DATA_DIR="$APP_DIR/data"
 mkdir -p "$DATA_DIR/uploads/cards"
 mkdir -p "$DATA_DIR/uploads/books"
 
-# Copy files from current location to /opt/privy if running from source, 
-# or assume we are pulling git. For this script, we assume we are inside the repo.
+# Copy files from current location to /opt/privy
+# We assume the script is run from inside the repo folder OR cloned by the installer
 echo "📂 Moving files to $APP_DIR..."
+
+# If running from curl (files not present), we might need to clone.
+# However, based on your workflow, we assume this script is running in a context 
+# where files are present OR you want to clone them now.
+# To make the curl command fully standalone, we should clone if files aren't here.
+
+if [ ! -f "server/server.js" ]; then
+    echo "📥 Cloning repository..."
+    git clone https://github.com/JungleeAadmi/Privy.git temp_privy
+    cp -r temp_privy/* .
+    rm -rf temp_privy
+fi
+
 cp -r . "$APP_DIR/"
 
 # 4. Install App Dependencies
