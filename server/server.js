@@ -115,14 +115,17 @@ const sendNtfy = (cardId) => {
 
                     console.log(`Ntfy: Sending image to ${url} (${size} bytes)`);
 
+                    // Use encoded strings for headers to ensure emojis work safely across all Node versions
+                    const message = "Today's Position \uD83D\uDE09"; // "Today's Position 😉"
+
                     fetch(url, {
-                        method: 'POST', // POST is often preferred for file uploads
+                        method: 'POST', 
                         body: fileBuffer,
                         headers: {
                             'Title': 'Privy: Card Revealed!',
-                            'X-Title': 'Privy: Card Revealed!', // Compatibility alias
-                            'Message': 'Someone revealed a card! Tap to view.', 
-                            'X-Message': 'Someone revealed a card! Tap to view.', // Compatibility alias
+                            'X-Title': 'Privy: Card Revealed!', 
+                            'Message': message, 
+                            'X-Message': message,
                             'Tags': 'heart,fire,camera',
                             'X-Tags': 'heart,fire,camera',
                             'Priority': 'high',
