@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -161,6 +161,29 @@ const PDFViewer = ({ url, title, onClose }) => {
   );
 };
 
+// 4. Section Tab Component (Reusable)
+const SectionTab = ({ section, activeSection, setActiveSection, onLongPress }) => {
+    const longPressProps = useLongPress(() => {
+        if (onLongPress) onLongPress(section);
+    }, 800);
+
+    const isActive = activeSection === section.id;
+
+    return (
+      <button
+        {...longPressProps}
+        onClick={() => setActiveSection(isActive ? null : section.id)}
+        className={`px-4 py-2 rounded-full whitespace-nowrap transition border ${
+          isActive 
+            ? 'bg-burgundy border-gold text-white shadow-lg transform scale-105 z-10' 
+            : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-800'
+        }`}
+      >
+        {section.title}
+      </button>
+    );
+};
+
 // --- Pages ---
 
 const Auth = ({ setUser }) => {
@@ -216,6 +239,224 @@ const Auth = ({ setUser }) => {
       </p>
     </div>
   );
+};
+
+const Spin = () => {
+    const [cards, setCards] = useState([]);
+    const [sections, setSections] = useState([]);
+    const [activeSection, setActiveSection] = useState(null);
+    const [rotation, setRotation] = useState(0);
+    const [isSpinning, setIsSpinning] = useState(false);
+    const [winner, setWinner] = useState(null); // The winning card object
+    const [showHistory, setShowHistory] = useState(false);
+
+    // Fetch Data
+    useEffect(() => {
+        const fetchData = async () => {
+            const token = localStorage.getItem('token');
+            const headers = { Authorization: `Bearer ${token}` };
+            try {
+                const [cardsRes, sectionsRes] = await Promise.all([
+                    fetch(`${API_URL}/cards`, { headers }),
+                    fetch(`${API_URL}/sections`, { headers })
+                ]);
+                if (cardsRes.ok && sectionsRes.ok) {
+                    setCards(await cardsRes.json());
+                    setSections(await sectionsRes.json());
+                }
+            } catch (e) { console.error(e); }
+        };
+        fetchData();
+    }, []);
+
+    const handleSpin = () => {
+        if (isSpinning) return;
+
+        // 1. Filter cards by active section
+        const pool = cards.filter(c => {
+            if (activeSection === null) return c.section_id == null; 
+            return c.section_id === activeSection;
+        });
+
+        if (pool.length === 0) {
+            alert("No cards in this section to spin!");
+            return;
+        }
+
+        setIsSpinning(true);
+        setWinner(null);
+
+        // 2. Determine Winner Logic
+        // We simulate 15 slots. We pick 15 random cards from the pool (can repeat)
+        // Then we pick a winning index (0-14).
+        const slots = Array.from({length: 15}, () => pool[Math.floor(Math.random() * pool.length)]);
+        const winningIndex = Math.floor(Math.random() * 15);
+        const winningCard = slots[winningIndex];
+
+        // 3. Calculate Rotation
+        // 15 segments = 24 deg per segment.
+        // We want to land on 'winningIndex'. 
+        // Wheel setup: Index 0 is at 0deg (top).
+        // To land on index I, we rotate such that I is at the top.
+        // Wait, usually wheels spin clockwise. The "pointer" is static at top.
+        // If 0 is at top, and we rotate 24deg clockwise, index 14 comes to top? 
+        // Let's keep it simple: Just spin a lot + random offset.
+        
+        const segmentAngle = 360 / 15;
+        const extraSpins = 5 * 360; // 5 full rotations
+        // To align segment 'winningIndex' under a top pointer after rotation:
+        // We need to rotate NEGATIVE or just calculate the position.
+        // Let's just pick a random angle, calculate which index lands at top, and assign the winner to that index logic.
+        // Easier: Spin to a specific angle.
+        
+        // Random landing angle (offset from 0)
+        const randomAngle = Math.floor(Math.random() * 360);
+        // Total rotation
+        const totalRotation = rotation + extraSpins + randomAngle; 
+        
+        setRotation(totalRotation);
+
+        // 4. Wait for animation (4s)
+        setTimeout(() => {
+            setIsSpinning(false);
+            setWinner(winningCard);
+            
+            // 5. Trigger Scratch/Notify API automatically
+            fetch(`${API_URL}/cards/${winningCard.id}/scratch`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
+        }, 4000);
+    };
+
+    return (
+        <div className="pb-24 pt-4 px-4 min-h-screen flex flex-col items-center">
+            {/* Sections Bar */}
+            <div className="w-full flex gap-2 overflow-x-auto pb-4 mb-4 no-scrollbar p-2 -mx-2 justify-center">
+                {sections.map(s => (
+                    <SectionTab 
+                        key={s.id} 
+                        section={s} 
+                        activeSection={activeSection} 
+                        setActiveSection={setActiveSection} 
+                        onLongPress={null} // No edit in Spin mode
+                    />
+                ))}
+            </div>
+
+            {/* Wheel Container */}
+            <div className="relative w-80 h-80 my-auto">
+                {/* Pointer */}
+                <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
+
+                {/* The Wheel */}
+                <div 
+                    className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden"
+                    style={{
+                        transform: `rotate(${rotation}deg)`,
+                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)' // Ease-out/in-out feel
+                    }}
+                >
+                    {/* Render 15 Segments */}
+                    {Array.from({length: 15}).map((_, i) => (
+                        <div 
+                            key={i}
+                            className="absolute top-0 left-1/2 w-full h-full origin-bottom-left -translate-x-1/2"
+                            style={{
+                                transform: `rotate(${i * (360/15)}deg) skewY(-${90 - (360/15)}deg)`,
+                                transformOrigin: '50% 50%'
+                            }}
+                        >
+                            {/* Slice Background - Alternate Colors */}
+                            <div 
+                                className={`w-full h-full rounded-full ${i % 2 === 0 ? 'bg-burgundy' : 'bg-gray-900'} border border-gold/20`}
+                                style={{
+                                    clipPath: 'polygon(50% 50%, 50% 0, 100% 0)' // Rough slice shape, simpler with conical gradient usually but this allows content
+                                }}
+                            ></div>
+                            
+                            {/* Number Label */}
+                            <span 
+                                className="absolute top-4 left-1/2 -translate-x-1/2 text-gold font-bold font-caveat text-lg"
+                                style={{
+                                    transform: `rotate(${12}deg)` // Offset to center text in slice
+                                }}
+                            >
+                                {i + 1}
+                            </span>
+                        </div>
+                    ))}
+                    
+                    {/* Simpler Wheel UI using Conic Gradient for background, overlay numbers */}
+                    <div className="absolute inset-0 rounded-full" style={{
+                        background: `conic-gradient(
+                            #800020 0deg 24deg, #111 24deg 48deg,
+                            #800020 48deg 72deg, #111 72deg 96deg,
+                            #800020 96deg 120deg, #111 120deg 144deg,
+                            #800020 144deg 168deg, #111 168deg 192deg,
+                            #800020 192deg 216deg, #111 216deg 240deg,
+                            #800020 240deg 264deg, #111 264deg 288deg,
+                            #800020 288deg 312deg, #111 312deg 336deg,
+                            #800020 336deg 360deg
+                        )`
+                    }}>
+                        {Array.from({length: 15}).map((_, i) => (
+                            <div 
+                                key={i}
+                                className="absolute w-full text-center pt-2 text-gold font-bold font-caveat text-xl"
+                                style={{
+                                    height: '50%',
+                                    top: 0,
+                                    left: 0,
+                                    transformOrigin: 'bottom center',
+                                    transform: `rotate(${i * 24 + 12}deg)` // Center text in 24deg slice
+                                }}
+                            >
+                                {i + 1}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Spin Button (Center) */}
+                <button 
+                    onClick={handleSpin}
+                    disabled={isSpinning}
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-gold border-4 border-burgundy shadow-[0_0_20px_#FFD700] flex items-center justify-center z-10 active:scale-95 transition disabled:opacity-50 disabled:scale-100"
+                >
+                    <span className="text-burgundy font-black text-xl font-sans tracking-widest">SPIN</span>
+                </button>
+            </div>
+
+            {/* Winner Modal */}
+            {winner && (
+                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black">
+                        <button onClick={() => setWinner(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button>
+                        
+                        <div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center"> 
+                            {showHistory ? (
+                                <HistoryList cardId={winner.id} onClose={() => setShowHistory(false)}/>
+                            ) : (
+                                <img src={winner.filepath} alt="Winner" className="max-w-full max-h-full object-contain" />
+                            )}
+                        </div>
+
+                        <div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4">
+                            <h3 className="text-gold text-2xl font-caveat mb-2">The Wheel has Spoken!</h3>
+                            <button 
+                                onClick={() => setShowHistory(!showHistory)}
+                                className="flex items-center gap-2 text-white/50 text-sm hover:text-white transition"
+                            >
+                                <Heart size={16} className="fill-lipstick text-lipstick"/> 
+                                <span>Revealed {winner.scratched_count + 1} times</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 };
 
 const Home = () => {
@@ -338,32 +579,6 @@ const Home = () => {
     setCards([...cards].sort(() => Math.random() - 0.5));
   };
 
-  // --- Components ---
-
-  const SectionTab = ({ section }) => {
-    const longPressProps = useLongPress(() => {
-        setSectionMenu(section);
-        setRenameText(section.title);
-        setIsRenamingSection(false);
-    }, 800);
-
-    const isActive = activeSection === section.id;
-
-    return (
-      <button
-        {...longPressProps}
-        onClick={() => setActiveSection(isActive ? null : section.id)}
-        className={`px-4 py-2 rounded-full whitespace-nowrap transition border ${
-          isActive 
-            ? 'bg-burgundy border-gold text-white shadow-lg transform scale-105 z-10' 
-            : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-800'
-        }`}
-      >
-        {section.title}
-      </button>
-    );
-  };
-
   const CardItem = ({ card }) => {
     const longPressProps = useLongPress(() => {
       setDeleteId(card.id);
@@ -399,7 +614,19 @@ const Home = () => {
   return (
     <div className="pb-24 pt-4 px-4 min-h-screen">
       <div className="flex gap-2 overflow-x-auto pb-4 mb-4 no-scrollbar p-2 -mx-2">
-        {sections.map(s => <SectionTab key={s.id} section={s} />)}
+        {sections.map(s => (
+            <SectionTab 
+                key={s.id} 
+                section={s} 
+                activeSection={activeSection} 
+                setActiveSection={setActiveSection} 
+                onLongPress={(sec) => {
+                    setSectionMenu(sec);
+                    setRenameText(sec.title);
+                    setIsRenamingSection(false);
+                }} 
+            />
+        ))}
         
         <button 
           onClick={() => setIsCreatingSection(true)}
@@ -819,6 +1046,10 @@ const Layout = ({ children, user, logout }) => {
           <Layers size={24} />
           <span className="text-xs">Cards</span>
         </Link>
+        <Link to="/spin" className={`flex flex-col items-center ${location.pathname === '/spin' ? 'text-lipstick' : 'text-gray-500'}`}>
+          <Aperture size={24} />
+          <span className="text-xs">Spin</span>
+        </Link>
         <Link to="/books" className={`flex flex-col items-center ${location.pathname === '/books' ? 'text-lipstick' : 'text-gray-500'}`}>
           <Book size={24} />
           <span className="text-xs">Books</span>
@@ -845,6 +1076,7 @@ export default function App() {
       <Layout user={user} logout={logout}>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/spin" element={<Spin />} />
           <Route path="/books" element={<Books />} />
           <Route path="/settings" element={<Settings user={user} logout={logout} />} />
         </Routes>
