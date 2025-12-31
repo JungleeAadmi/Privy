@@ -959,8 +959,16 @@ const Layout = ({ children, user, logout }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
 
-  const handleReload = () => {
-    window.location.reload();
+  const handleReload = async () => {
+    // FORCE RELOAD LOGIC: Unregister Service Workers to break cache
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const registration of registrations) {
+        await registration.unregister();
+      }
+    }
+    // Hard reload
+    window.location.reload(true);
   };
 
   return (
