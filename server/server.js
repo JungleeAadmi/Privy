@@ -390,6 +390,19 @@ app.get('/api/cards/:id/history', auth, (req, res) => {
     });
 });
 
+// --- Route: App Reset ---
+app.post('/api/reset-app', auth, (req, res) => {
+    db.serialize(() => {
+        // Clear history logs
+        db.run(`DELETE FROM card_history`);
+        // Reset counts
+        db.run(`UPDATE cards SET scratched_count = 0`, (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        });
+    });
+});
+
 // --- Routes: Books ---
 app.get('/api/books', auth, (req, res) => {
     db.all(`SELECT * FROM books`, [], (err, rows) => {
