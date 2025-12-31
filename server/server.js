@@ -121,18 +121,22 @@ const sendNtfy = (cardId) => {
                     const fileBuffer = fs.readFileSync(absPath);
                     const { size } = fs.statSync(absPath);
                     
+                    // FIX: Get correct extension to ensure mobile clients render preview
+                    const ext = path.extname(absPath) || '.jpg';
+                    const filename = `reveal${ext}`;
+
                     // Construct URL (handle trailing slash)
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
                     
-                    // Use URL Query Parameters for metadata
+                    // Use URL Query Parameters for metadata to safely support Emojis
                     const ntfyUrl = new URL(`${baseUrl}/${settings.ntfy_topic}`);
                     ntfyUrl.searchParams.append('message', "Today's Position \uD83D\uDE09"); // 😉
                     ntfyUrl.searchParams.append('title', 'Privy: Card Revealed!');
                     ntfyUrl.searchParams.append('tags', 'heart,fire,camera');
                     ntfyUrl.searchParams.append('priority', 'high');
-                    ntfyUrl.searchParams.append('filename', 'reveal.jpg');
+                    ntfyUrl.searchParams.append('filename', filename); // Corrected filename
 
-                    console.log(`[Ntfy] Sending ${size} bytes to ${ntfyUrl.toString()}...`);
+                    console.log(`[Ntfy] Sending ${size} bytes to ${ntfyUrl.toString()} as ${filename}...`);
 
                     fetch(ntfyUrl.toString(), {
                         method: 'POST',
@@ -144,19 +148,7 @@ const sendNtfy = (cardId) => {
                     .then(async res => {
                         if (!res.ok) {
                             const text = await res.text();
-                            console.error(`[Ntfy] Image Upload Failed (${res.status}): ${text}`);
-                            
-                            // FALLBACK: Send text-only notification if image fails
-                            if (res.status === 400 || res.status === 413 || res.status === 500) {
-                                console.log("[Ntfy] Attempting text-only fallback...");
-                                ntfyUrl.searchParams.delete('filename'); // Remove attachment flag
-                                ntfyUrl.searchParams.set('message', "Card Revealed! (Image upload failed on server side)");
-                                ntfyUrl.searchParams.set('tags', 'warning,camera');
-
-                                fetch(ntfyUrl.toString(), { method: 'POST' })
-                                    .then(() => console.log("[Ntfy] Text fallback sent successfully."))
-                                    .catch(e => console.error("[Ntfy] Fallback failed:", e.message));
-                            }
+                            console.error(`[Ntfy] Server responded with Error ${res.status}: ${text}`);
                         } else {
                             const json = await res.json();
                             console.log("[Ntfy] Success!", json);
