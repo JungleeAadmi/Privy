@@ -78,20 +78,30 @@ db.serialize(() => {
 
 // --- Helper: Send Ntfy Notification with Image ---
 const sendNtfy = (cardId) => {
+    console.log(`[Ntfy] Starting notification for Card ID: ${cardId}`);
+
     // 1. Get Settings
     db.all(`SELECT * FROM settings WHERE key IN ('ntfy_url', 'ntfy_topic')`, [], (err, rows) => {
-        if (err || !rows) return;
+        if (err) {
+            console.error("[Ntfy] DB Error fetching settings:", err.message);
+            return;
+        }
         
         const settings = rows.reduce((acc, r) => ({...acc, [r.key]: r.value}), {});
+        
         if (!settings.ntfy_url || !settings.ntfy_topic) {
-            console.log("Ntfy: Missing URL or Topic");
+            console.warn("[Ntfy] Aborted: URL or Topic not configured in settings.");
             return;
         }
 
         // 2. Get Card Image Path
         db.get(`SELECT filepath FROM cards WHERE id = ?`, [cardId], (err, card) => {
+            if (err) {
+                console.error("[Ntfy] DB Error fetching card:", err.message);
+                return;
+            }
             if (!card) {
-                console.log("Ntfy: Card not found for ID", cardId);
+                console.error("[Ntfy] Card not found in DB.");
                 return;
             }
 
@@ -99,9 +109,11 @@ const sendNtfy = (cardId) => {
             const cleanPath = card.filepath.replace('/uploads/', '');
             const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
 
+            console.log(`[Ntfy] Resolving file path: ${absPath}`);
+
             if (fs.existsSync(absPath)) {
                 if (typeof fetch !== 'function') {
-                    console.error("Ntfy: Node environment missing 'fetch'");
+                    console.error("[Ntfy] Error: Node.js environment missing 'fetch'. Upgrade Node?");
                     return;
                 }
 
@@ -113,38 +125,42 @@ const sendNtfy = (cardId) => {
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
                     const url = `${baseUrl}/${settings.ntfy_topic}`;
 
-                    console.log(`Ntfy: Sending image to ${url} (${size} bytes)`);
+                    console.log(`[Ntfy] Sending ${size} bytes to ${url}...`);
 
-                    // Use encoded strings for headers to ensure emojis work safely across all Node versions
-                    const message = "Today's Position \uD83D\uDE09"; // "Today's Position 😉"
+                    const message = "Today's Position \uD83D\uDE09"; 
 
                     fetch(url, {
-                        method: 'POST', 
+                        method: 'POST',
                         body: fileBuffer,
                         headers: {
                             'Title': 'Privy: Card Revealed!',
-                            'X-Title': 'Privy: Card Revealed!', 
-                            'Message': message, 
+                            'X-Title': 'Privy: Card Revealed!',
+                            'Message': message,
                             'X-Message': message,
                             'Tags': 'heart,fire,camera',
                             'X-Tags': 'heart,fire,camera',
                             'Priority': 'high',
                             'X-Priority': 'high',
                             'Filename': 'reveal.jpg',
-                            'Content-Length': size
+                            'Content-Length': size.toString()
                         }
-                    }).then(res => {
+                    })
+                    .then(async res => {
                         if (!res.ok) {
-                            res.text().then(text => console.error(`Ntfy Failed (${res.status}): ${text}`));
+                            const text = await res.text();
+                            console.error(`[Ntfy] Server responded with Error ${res.status}: ${text}`);
                         } else {
-                            console.log("Ntfy: Image notification sent successfully.");
+                            const json = await res.json();
+                            console.log("[Ntfy] Success!", json);
                         }
-                    }).catch(err => console.error("Ntfy Network Error:", err.message));
+                    })
+                    .catch(err => console.error("[Ntfy] Network Request Failed:", err.message));
+
                 } catch (readErr) {
-                    console.error("File Read Error:", readErr);
+                    console.error("[Ntfy] File Read Error:", readErr.message);
                 }
             } else {
-                console.error("Ntfy: File does not exist at", absPath);
+                console.error(`[Ntfy] File missing on disk at: ${absPath}`);
             }
         });
     });
