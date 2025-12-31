@@ -247,7 +247,7 @@ const Spin = () => {
     const [activeSection, setActiveSection] = useState(null);
     const [rotation, setRotation] = useState(0);
     const [isSpinning, setIsSpinning] = useState(false);
-    const [winner, setWinner] = useState(null); // The winning card object
+    const [winner, setWinner] = useState(null); 
     const [showHistory, setShowHistory] = useState(false);
 
     // Fetch Data
@@ -286,35 +286,52 @@ const Spin = () => {
         setIsSpinning(true);
         setWinner(null);
 
-        // 2. Determine Winner Logic
-        // We simulate 15 slots. We pick 15 random cards from the pool (can repeat)
-        // Then we pick a winning index (0-14).
-        const slots = Array.from({length: 15}, () => pool[Math.floor(Math.random() * pool.length)]);
-        const winningIndex = Math.floor(Math.random() * 15);
+        // 2. Setup 16 slots with random cards
+        const SEGMENT_COUNT = 16;
+        const slots = Array.from({length: SEGMENT_COUNT}, () => pool[Math.floor(Math.random() * pool.length)]);
+        const winningIndex = Math.floor(Math.random() * SEGMENT_COUNT);
         const winningCard = slots[winningIndex];
 
-        // 3. Calculate Rotation
-        // 15 segments = 24 deg per segment.
-        // We want to land on 'winningIndex'. 
-        // Wheel setup: Index 0 is at 0deg (top).
-        // To land on index I, we rotate such that I is at the top.
-        // Wait, usually wheels spin clockwise. The "pointer" is static at top.
-        // If 0 is at top, and we rotate 24deg clockwise, index 14 comes to top? 
-        // Let's keep it simple: Just spin a lot + random offset.
+        // 3. Calculate Rotation to land on winningIndex
+        // Pointer is at Top (0 deg). Segment 0 is at 0 deg.
+        // Rotating the wheel Counter-Clockwise (Negative) moves index N to top? 
+        // No, standard CSS rotate is clockwise.
+        // To bring Segment `i` to top (0deg), we need to rotate `-(i * angle)`.
+        // Add multiple full spins (5 * 360).
+        // Add offset to center the segment (-angle/2).
         
-        const segmentAngle = 360 / 15;
-        const extraSpins = 5 * 360; // 5 full rotations
-        // To align segment 'winningIndex' under a top pointer after rotation:
-        // We need to rotate NEGATIVE or just calculate the position.
-        // Let's just pick a random angle, calculate which index lands at top, and assign the winner to that index logic.
-        // Easier: Spin to a specific angle.
+        const segmentAngle = 360 / SEGMENT_COUNT; // 22.5 deg
+        const fullSpins = 5 * 360;
         
-        // Random landing angle (offset from 0)
-        const randomAngle = Math.floor(Math.random() * 360);
-        // Total rotation
-        const totalRotation = rotation + extraSpins + randomAngle; 
+        // Target is to put winningIndex at 0deg.
+        // Current Rotation + Full Spins + (Distance to Target)
+        // Let's just calculate absolute target.
+        // We want final position `P` such that `(P + winningIndex * 22.5 + 11.25) % 360 == 0`?
+        // Let's simplify: rotate backwards by `winningIndex * 22.5` minus half segment.
+        const targetRotation = fullSpins - (winningIndex * segmentAngle) - (segmentAngle / 2);
         
-        setRotation(totalRotation);
+        // We accumulate rotation so it doesn't snap back
+        // Ensure we always spin forward (or consistently) by adding to current `rotation`
+        // But `targetRotation` logic above resets to 0. 
+        // Let's just add `fullSpins` and the delta.
+        // Simpler visual trick: Just spin a huge random amount and calculate who won based on angle.
+        // BUT, user asked: "whichever number comes... show image".
+        // So we strictly control the angle.
+        
+        // Current logical rotation index (0-15)
+        const currentVisualIndex = Math.floor(((360 - (rotation % 360)) % 360) / segmentAngle);
+        
+        // How much to rotate to get from current to winning?
+        // We want `winningIndex` at top.
+        // Rotate by `(currentVisualIndex - winningIndex) * segmentAngle`? Too complex.
+        
+        // Absolute method:
+        // Set rotation to: `rotation + 1800 (5 spins) + (360 - (winningIndex * 22.5) - 11.25 - (rotation % 360))`?
+        // Let's rely on CSS transition handling the delta.
+        
+        const nextRotation = rotation + 1800 + (360 - (winningIndex * segmentAngle) - (segmentAngle/2) - (rotation % 360));
+        
+        setRotation(nextRotation);
 
         // 4. Wait for animation (4s)
         setTimeout(() => {
@@ -330,22 +347,22 @@ const Spin = () => {
     };
 
     return (
-        <div className="pb-24 pt-4 px-4 min-h-screen flex flex-col items-center">
+        <div className="flex flex-col items-center w-full min-h-full py-4">
             {/* Sections Bar */}
-            <div className="w-full flex gap-2 overflow-x-auto pb-4 mb-4 no-scrollbar p-2 -mx-2 justify-center">
+            <div className="w-full flex gap-2 overflow-x-auto pb-4 mb-8 no-scrollbar px-4 -mx-2 justify-center shrink-0">
                 {sections.map(s => (
                     <SectionTab 
                         key={s.id} 
                         section={s} 
                         activeSection={activeSection} 
                         setActiveSection={setActiveSection} 
-                        onLongPress={null} // No edit in Spin mode
+                        onLongPress={null} 
                     />
                 ))}
             </div>
 
             {/* Wheel Container */}
-            <div className="relative w-80 h-80 my-auto">
+            <div className="relative w-80 h-80 shrink-0">
                 {/* Pointer */}
                 <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
 
@@ -354,16 +371,16 @@ const Spin = () => {
                     className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden"
                     style={{
                         transform: `rotate(${rotation}deg)`,
-                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)' // Ease-out/in-out feel
+                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)' 
                     }}
                 >
-                    {/* Render 15 Segments */}
-                    {Array.from({length: 15}).map((_, i) => (
+                    {/* Render 16 Segments */}
+                    {Array.from({length: 16}).map((_, i) => (
                         <div 
                             key={i}
                             className="absolute top-0 left-1/2 w-full h-full origin-bottom-left -translate-x-1/2"
                             style={{
-                                transform: `rotate(${i * (360/15)}deg) skewY(-${90 - (360/15)}deg)`,
+                                transform: `rotate(${i * 22.5}deg) skewY(-67.5deg)`, // 90 - 22.5 = 67.5
                                 transformOrigin: '50% 50%'
                             }}
                         >
@@ -371,7 +388,7 @@ const Spin = () => {
                             <div 
                                 className={`w-full h-full rounded-full ${i % 2 === 0 ? 'bg-burgundy' : 'bg-gray-900'} border border-gold/20`}
                                 style={{
-                                    clipPath: 'polygon(50% 50%, 50% 0, 100% 0)' // Rough slice shape, simpler with conical gradient usually but this allows content
+                                    clipPath: 'polygon(50% 50%, 50% 0, 100% 0)' 
                                 }}
                             ></div>
                             
@@ -379,7 +396,7 @@ const Spin = () => {
                             <span 
                                 className="absolute top-4 left-1/2 -translate-x-1/2 text-gold font-bold font-caveat text-lg"
                                 style={{
-                                    transform: `rotate(${12}deg)` // Offset to center text in slice
+                                    transform: `rotate(${11.25}deg)` // Center text (22.5 / 2)
                                 }}
                             >
                                 {i + 1}
@@ -387,35 +404,14 @@ const Spin = () => {
                         </div>
                     ))}
                     
-                    {/* Simpler Wheel UI using Conic Gradient for background, overlay numbers */}
-                    <div className="absolute inset-0 rounded-full" style={{
+                    {/* Dynamic Conic Gradient Fallback/Overlay (Optional visual flair) */}
+                    <div className="absolute inset-0 rounded-full pointer-events-none opacity-20" style={{
                         background: `conic-gradient(
-                            #800020 0deg 24deg, #111 24deg 48deg,
-                            #800020 48deg 72deg, #111 72deg 96deg,
-                            #800020 96deg 120deg, #111 120deg 144deg,
-                            #800020 144deg 168deg, #111 168deg 192deg,
-                            #800020 192deg 216deg, #111 216deg 240deg,
-                            #800020 240deg 264deg, #111 264deg 288deg,
-                            #800020 288deg 312deg, #111 312deg 336deg,
-                            #800020 336deg 360deg
+                          ${Array.from({length: 16}).map((_, i) => 
+                            `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`
+                          ).join(', ')}
                         )`
-                    }}>
-                        {Array.from({length: 15}).map((_, i) => (
-                            <div 
-                                key={i}
-                                className="absolute w-full text-center pt-2 text-gold font-bold font-caveat text-xl"
-                                style={{
-                                    height: '50%',
-                                    top: 0,
-                                    left: 0,
-                                    transformOrigin: 'bottom center',
-                                    transform: `rotate(${i * 24 + 12}deg)` // Center text in 24deg slice
-                                }}
-                            >
-                                {i + 1}
-                            </div>
-                        ))}
-                    </div>
+                    }}></div>
                 </div>
 
                 {/* Spin Button (Center) */}
@@ -612,7 +608,8 @@ const Home = () => {
   });
 
   return (
-    <div className="pb-24 pt-4 px-4 min-h-screen">
+    <div className="pb-24 px-4 w-full">
+      {/* Sections Bar */}
       <div className="flex gap-2 overflow-x-auto pb-4 mb-4 no-scrollbar p-2 -mx-2">
         {sections.map(s => (
             <SectionTab 
@@ -636,6 +633,7 @@ const Home = () => {
         </button>
       </div>
 
+      {/* Controls */}
       <div className="flex justify-between items-center mb-6 bg-black/40 p-4 rounded-xl backdrop-blur-sm border-b border-gold/20">
         <div className="flex gap-4">
           <button onClick={shuffleCards} className="flex items-center gap-2 text-gold hover:text-white"><Shuffle size={20}/> Shuffle</button>
@@ -647,6 +645,7 @@ const Home = () => {
         </label>
       </div>
 
+      {/* Grid */}
       {filteredCards.length === 0 ? (
         <div className="flex flex-col items-center justify-center mt-10 text-gray-500 gap-4">
           <Folder size={48} />
@@ -660,6 +659,7 @@ const Home = () => {
         </div>
       )}
 
+      {/* Create Section Modal */}
       {isCreatingSection && (
         <div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-gold p-6 rounded-xl w-72">
@@ -679,6 +679,7 @@ const Home = () => {
         </div>
       )}
 
+      {/* Section Options Modal (Rename/Delete) */}
       {sectionMenu && (
         <div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-72 text-center shadow-2xl">
@@ -713,6 +714,7 @@ const Home = () => {
         </div>
       )}
 
+      {/* Card Play Modal */}
       {selectedCard && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
            <div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black animate-fadeIn">
@@ -743,6 +745,7 @@ const Home = () => {
         </div>
       )}
 
+      {/* Card Delete Modal */}
       {deleteId && (
         <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center">
@@ -1005,8 +1008,8 @@ const Layout = ({ children, user, logout }) => {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white font-caveat selection:bg-lipstick">
-      <header className="fixed top-0 w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-2 flex justify-between items-center shadow-lg">
+    <div className="fixed inset-0 w-full h-full bg-black text-white font-caveat selection:bg-lipstick flex flex-col overflow-hidden">
+      <header className="flex-none w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-2 flex justify-between items-center shadow-lg">
         <div className="flex items-center gap-3">
           <img src="/apple-touch-icon.png" alt="Logo" className="w-10 h-10 rounded-full border border-gold shadow-md" />
           <div className="flex flex-col">
@@ -1029,19 +1032,24 @@ const Layout = ({ children, user, logout }) => {
             </button>
         </div>
       </header>
+      
+      {/* Mobile Menu Overlay */}
       {menuOpen && (
-        <div className="fixed top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-40 p-4 shadow-2xl transform transition-transform">
+        <div className="absolute top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-50 p-4 shadow-2xl transform transition-transform">
            <div className="flex flex-col gap-4 text-xl">
              <Link to="/settings" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded"><User size={20}/> Profile</Link>
              <button onClick={logout} className="flex items-center gap-3 p-2 text-lipstick hover:bg-white/10 rounded"><LogOut size={20}/> Logout</button>
            </div>
         </div>
       )}
-      <main className="pt-20 min-h-screen bg-gradient-to-b from-black via-eggplant/20 to-black">
+
+      {/* Main Content Area - Scrollable */}
+      <main className="flex-1 overflow-y-auto bg-gradient-to-b from-black via-eggplant/20 to-black relative">
         {children}
       </main>
       
-      <nav className="fixed bottom-0 w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50">
+      {/* Bottom Nav */}
+      <nav className="flex-none w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50">
         <Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}>
           <Layers size={24} />
           <span className="text-xs">Cards</span>
