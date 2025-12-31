@@ -294,23 +294,9 @@ const Spin = () => {
 
         // 3. Calculate Rotation
         const segmentAngle = 360 / SEGMENT_COUNT; // 22.5 deg
-        // Rotate enough times + align the winning segment to TOP
-        // The pointer is at top. To put segment 'i' at top, we rotate the wheel such that 'i' moves to 0deg.
-        // If segment 0 is at 0-22.5deg, center is 11.25deg.
-        // To bring center of segment i (i*22.5 + 11.25) to top (360/0), 
-        // we must rotate Counter-Clockwise by that amount, OR Clockwise by (360 - that amount).
-        
-        // Let's use simple logic: spin a few times, then stop at calculated angle.
-        // We accumulate rotation.
         
         const offsetToCenter = (winningIndex * segmentAngle) + (segmentAngle / 2);
         const targetAngle = 360 - offsetToCenter; // Angle to put winner at top (0)
-        
-        // Ensure we spin at least 5 times (1800 deg)
-        // Current rotation % 360 gives us current normalized angle.
-        // We want to reach targetAngle.
-        // Delta = targetAngle - (current % 360). 
-        // If delta < 0, add 360 to spin forward.
         
         let delta = targetAngle - (rotation % 360);
         if (delta < 0) delta += 360;
@@ -334,8 +320,8 @@ const Spin = () => {
 
     return (
         <div className="flex flex-col items-center w-full min-h-full py-4">
-            {/* Sections Bar */}
-            <div className="w-full flex gap-2 overflow-x-auto pb-4 mb-8 no-scrollbar px-4 -mx-2 justify-center shrink-0">
+            {/* Sections Bar - Added p-2 and removed negative margins to ensure active tab scaling isn't cropped */}
+            <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">
                 {sections.map(s => (
                     <SectionTab 
                         key={s.id} 
