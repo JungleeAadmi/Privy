@@ -120,11 +120,18 @@ const sendNtfy = (cardId) => {
                 try {
                     const fileBuffer = fs.readFileSync(absPath);
                     const { size } = fs.statSync(absPath);
-                    
-                    // FIX: Get correct extension to ensure mobile clients render preview
                     const ext = path.extname(absPath) || '.jpg';
-                    const filename = `reveal${ext}`;
+                    
+                    // FIX 1: Generate Unique Filename to bust iOS cache
+                    const timestamp = Date.now();
+                    const filename = `card_${cardId}_${timestamp}${ext}`;
 
+                    // FIX 2: Determine correct MIME type
+                    let contentType = 'application/octet-stream';
+                    if (ext === '.png') contentType = 'image/png';
+                    else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
+                    else if (ext === '.gif') contentType = 'image/gif';
+                    
                     // Construct URL (handle trailing slash)
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
                     
@@ -134,15 +141,16 @@ const sendNtfy = (cardId) => {
                     ntfyUrl.searchParams.append('title', 'Privy: Card Revealed!');
                     ntfyUrl.searchParams.append('tags', 'heart,fire,camera');
                     ntfyUrl.searchParams.append('priority', 'high');
-                    ntfyUrl.searchParams.append('filename', filename); // Corrected filename
+                    ntfyUrl.searchParams.append('filename', filename); // Send unique filename
 
-                    console.log(`[Ntfy] Sending ${size} bytes to ${ntfyUrl.toString()} as ${filename}...`);
+                    console.log(`[Ntfy] Sending ${size} bytes to ${ntfyUrl.toString()} as ${filename} (${contentType})...`);
 
                     fetch(ntfyUrl.toString(), {
                         method: 'POST',
                         body: fileBuffer,
                         headers: {
-                            'Content-Length': size.toString()
+                            'Content-Length': size.toString(),
+                            'Content-Type': contentType // Explicit content type
                         }
                     })
                     .then(async res => {
