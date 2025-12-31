@@ -62,6 +62,4 @@ To receive push notifications with images when a card is revealed:
 * **Database:** SQLite.  
 * **Interaction:** Custom Canvas API for scratch/reveal effects.
 
-## **📸 Screenshots**
-
 *Disclaimer: This project is intended for private, self-hosted use. The creators accept no responsibility for the content uploaded or the usage of the application.*
