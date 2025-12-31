@@ -292,46 +292,32 @@ const Spin = () => {
         const winningIndex = Math.floor(Math.random() * SEGMENT_COUNT);
         const winningCard = slots[winningIndex];
 
-        // 3. Calculate Rotation to land on winningIndex
-        // Pointer is at Top (0 deg). Segment 0 is at 0 deg.
-        // Rotating the wheel Counter-Clockwise (Negative) moves index N to top? 
-        // No, standard CSS rotate is clockwise.
-        // To bring Segment `i` to top (0deg), we need to rotate `-(i * angle)`.
-        // Add multiple full spins (5 * 360).
-        // Add offset to center the segment (-angle/2).
-        
+        // 3. Calculate Rotation
         const segmentAngle = 360 / SEGMENT_COUNT; // 22.5 deg
-        const fullSpins = 5 * 360;
+        // Rotate enough times + align the winning segment to TOP
+        // The pointer is at top. To put segment 'i' at top, we rotate the wheel such that 'i' moves to 0deg.
+        // If segment 0 is at 0-22.5deg, center is 11.25deg.
+        // To bring center of segment i (i*22.5 + 11.25) to top (360/0), 
+        // we must rotate Counter-Clockwise by that amount, OR Clockwise by (360 - that amount).
         
-        // Target is to put winningIndex at 0deg.
-        // Current Rotation + Full Spins + (Distance to Target)
-        // Let's just calculate absolute target.
-        // We want final position `P` such that `(P + winningIndex * 22.5 + 11.25) % 360 == 0`?
-        // Let's simplify: rotate backwards by `winningIndex * 22.5` minus half segment.
-        const targetRotation = fullSpins - (winningIndex * segmentAngle) - (segmentAngle / 2);
+        // Let's use simple logic: spin a few times, then stop at calculated angle.
+        // We accumulate rotation.
         
-        // We accumulate rotation so it doesn't snap back
-        // Ensure we always spin forward (or consistently) by adding to current `rotation`
-        // But `targetRotation` logic above resets to 0. 
-        // Let's just add `fullSpins` and the delta.
-        // Simpler visual trick: Just spin a huge random amount and calculate who won based on angle.
-        // BUT, user asked: "whichever number comes... show image".
-        // So we strictly control the angle.
+        const offsetToCenter = (winningIndex * segmentAngle) + (segmentAngle / 2);
+        const targetAngle = 360 - offsetToCenter; // Angle to put winner at top (0)
         
-        // Current logical rotation index (0-15)
-        const currentVisualIndex = Math.floor(((360 - (rotation % 360)) % 360) / segmentAngle);
+        // Ensure we spin at least 5 times (1800 deg)
+        // Current rotation % 360 gives us current normalized angle.
+        // We want to reach targetAngle.
+        // Delta = targetAngle - (current % 360). 
+        // If delta < 0, add 360 to spin forward.
         
-        // How much to rotate to get from current to winning?
-        // We want `winningIndex` at top.
-        // Rotate by `(currentVisualIndex - winningIndex) * segmentAngle`? Too complex.
+        let delta = targetAngle - (rotation % 360);
+        if (delta < 0) delta += 360;
         
-        // Absolute method:
-        // Set rotation to: `rotation + 1800 (5 spins) + (360 - (winningIndex * 22.5) - 11.25 - (rotation % 360))`?
-        // Let's rely on CSS transition handling the delta.
+        const totalRotation = rotation + (5 * 360) + delta;
         
-        const nextRotation = rotation + 1800 + (360 - (winningIndex * segmentAngle) - (segmentAngle/2) - (rotation % 360));
-        
-        setRotation(nextRotation);
+        setRotation(totalRotation);
 
         // 4. Wait for animation (4s)
         setTimeout(() => {
@@ -371,47 +357,31 @@ const Spin = () => {
                     className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden"
                     style={{
                         transform: `rotate(${rotation}deg)`,
-                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)' 
-                    }}
-                >
-                    {/* Render 16 Segments */}
-                    {Array.from({length: 16}).map((_, i) => (
-                        <div 
-                            key={i}
-                            className="absolute top-0 left-1/2 w-full h-full origin-bottom-left -translate-x-1/2"
-                            style={{
-                                transform: `rotate(${i * 22.5}deg) skewY(-67.5deg)`, // 90 - 22.5 = 67.5
-                                transformOrigin: '50% 50%'
-                            }}
-                        >
-                            {/* Slice Background - Alternate Colors */}
-                            <div 
-                                className={`w-full h-full rounded-full ${i % 2 === 0 ? 'bg-burgundy' : 'bg-gray-900'} border border-gold/20`}
-                                style={{
-                                    clipPath: 'polygon(50% 50%, 50% 0, 100% 0)' 
-                                }}
-                            ></div>
-                            
-                            {/* Number Label */}
-                            <span 
-                                className="absolute top-4 left-1/2 -translate-x-1/2 text-gold font-bold font-caveat text-lg"
-                                style={{
-                                    transform: `rotate(${11.25}deg)` // Center text (22.5 / 2)
-                                }}
-                            >
-                                {i + 1}
-                            </span>
-                        </div>
-                    ))}
-                    
-                    {/* Dynamic Conic Gradient Fallback/Overlay (Optional visual flair) */}
-                    <div className="absolute inset-0 rounded-full pointer-events-none opacity-20" style={{
+                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                        // PERFECT 16 SEGMENT GRADIENT
                         background: `conic-gradient(
                           ${Array.from({length: 16}).map((_, i) => 
                             `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`
                           ).join(', ')}
                         )`
-                    }}></div>
+                    }}
+                >
+                    {/* Render Numbers */}
+                    {Array.from({length: 16}).map((_, i) => (
+                        <div 
+                            key={i}
+                            className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom"
+                            style={{
+                                transform: `rotate(${i * 22.5 + 11.25}deg)`, // Rotate stick to center of segment
+                            }}
+                        >
+                            <span 
+                                className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl"
+                            >
+                                {i + 1}
+                            </span>
+                        </div>
+                    ))}
                 </div>
 
                 {/* Spin Button (Center) */}
