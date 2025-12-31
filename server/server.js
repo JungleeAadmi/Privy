@@ -124,8 +124,7 @@ const sendNtfy = (cardId) => {
                     // Construct URL (handle trailing slash)
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
                     
-                    // FIX: Use URL Query Parameters for metadata to safely support Emojis
-                    // Sending non-ASCII in headers causes 'ByteString' errors in Node.js
+                    // Use URL Query Parameters for metadata
                     const ntfyUrl = new URL(`${baseUrl}/${settings.ntfy_topic}`);
                     ntfyUrl.searchParams.append('message', "Today's Position \uD83D\uDE09"); // 😉
                     ntfyUrl.searchParams.append('title', 'Privy: Card Revealed!');
@@ -145,7 +144,19 @@ const sendNtfy = (cardId) => {
                     .then(async res => {
                         if (!res.ok) {
                             const text = await res.text();
-                            console.error(`[Ntfy] Server responded with Error ${res.status}: ${text}`);
+                            console.error(`[Ntfy] Image Upload Failed (${res.status}): ${text}`);
+                            
+                            // FALLBACK: Send text-only notification if image fails
+                            if (res.status === 400 || res.status === 413 || res.status === 500) {
+                                console.log("[Ntfy] Attempting text-only fallback...");
+                                ntfyUrl.searchParams.delete('filename'); // Remove attachment flag
+                                ntfyUrl.searchParams.set('message', "Card Revealed! (Image upload failed on server side)");
+                                ntfyUrl.searchParams.set('tags', 'warning,camera');
+
+                                fetch(ntfyUrl.toString(), { method: 'POST' })
+                                    .then(() => console.log("[Ntfy] Text fallback sent successfully."))
+                                    .catch(e => console.error("[Ntfy] Fallback failed:", e.message));
+                            }
                         } else {
                             const json = await res.json();
                             console.log("[Ntfy] Success!", json);
