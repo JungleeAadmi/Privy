@@ -123,25 +123,22 @@ const sendNtfy = (cardId) => {
                     
                     // Construct URL (handle trailing slash)
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
-                    const url = `${baseUrl}/${settings.ntfy_topic}`;
+                    
+                    // FIX: Use URL Query Parameters for metadata to safely support Emojis
+                    // Sending non-ASCII in headers causes 'ByteString' errors in Node.js
+                    const ntfyUrl = new URL(`${baseUrl}/${settings.ntfy_topic}`);
+                    ntfyUrl.searchParams.append('message', "Today's Position \uD83D\uDE09"); // 😉
+                    ntfyUrl.searchParams.append('title', 'Privy: Card Revealed!');
+                    ntfyUrl.searchParams.append('tags', 'heart,fire,camera');
+                    ntfyUrl.searchParams.append('priority', 'high');
+                    ntfyUrl.searchParams.append('filename', 'reveal.jpg');
 
-                    console.log(`[Ntfy] Sending ${size} bytes to ${url}...`);
+                    console.log(`[Ntfy] Sending ${size} bytes to ${ntfyUrl.toString()}...`);
 
-                    const message = "Today's Position \uD83D\uDE09"; 
-
-                    fetch(url, {
+                    fetch(ntfyUrl.toString(), {
                         method: 'POST',
                         body: fileBuffer,
                         headers: {
-                            'Title': 'Privy: Card Revealed!',
-                            'X-Title': 'Privy: Card Revealed!',
-                            'Message': message,
-                            'X-Message': message,
-                            'Tags': 'heart,fire,camera',
-                            'X-Tags': 'heart,fire,camera',
-                            'Priority': 'high',
-                            'X-Priority': 'high',
-                            'Filename': 'reveal.jpg',
                             'Content-Length': size.toString()
                         }
                     })
