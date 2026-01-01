@@ -98,7 +98,7 @@ const playSound = (type) => {
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Top-Level Components ---
+// --- Sub-Components ---
 
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
@@ -451,7 +451,7 @@ const DiceGame = () => {
         }, 100);
     };
 
-    const startTimer = () => { if (result.time === '?' || result.time === '∞') return; if (!timerActive) playSound('ting'); if (!timerPaused) setTimeLeft(parseInt(result.time)); setTimerActive(true); setTimerPaused(false); };
+    const startTimer = () => { if (result.time === '?' || result.time === '∞') return; if (!timerActive) playSound('ting'); if (!timerPaused && !timerActive) setTimeLeft(parseInt(result.time)); setTimerActive(true); setTimerPaused(false); };
     const pauseTimer = () => { setTimerPaused(true); setTimerActive(false); };
     const stopTimer = () => { setTimerActive(false); setTimerPaused(false); setTimeLeft(0); };
 
@@ -478,10 +478,11 @@ const DiceGame = () => {
     return (
         <div className="flex flex-col items-center justify-start h-full p-4 gap-6 w-full max-w-md mx-auto pt-12 overflow-y-auto">
             <div className="flex flex-wrap gap-4 w-full justify-center">
-                <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-sm leading-tight">{result.act}</span></div>
-                <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-sm leading-tight">{result.loc}</span></div>
-                <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1">
-                    {(timerActive || timerPaused) ? <span className="text-red-500 font-mono text-3xl animate-pulse">{timeLeft}</span> : <span className="text-white font-bold text-xl">{result.time === '∞' ? '∞' : result.time + 's'}</span>}
+                <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(128,0,32,0.8)]"><span className="text-white font-bold text-2xl leading-tight">{result.act}</span></div>
+                <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(48,25,52,0.8)]"><span className="text-white font-bold text-2xl leading-tight">{result.loc}</span></div>
+                {/* Die 3: Always show the result (e.g. 30s) */}
+                <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(255,215,0,0.3)]">
+                    <span className="text-white font-bold text-3xl">{result.time === '∞' ? '∞' : (result.time === '?' ? '?' : result.time + 's')}</span>
                 </div>
             </div>
 
@@ -490,6 +491,13 @@ const DiceGame = () => {
                     <p className="text-white text-3xl font-caveat font-bold leading-relaxed">
                         <span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span> {result.time !== '∞' ? ` for ${result.time} seconds` : ` until stopped`}
                     </p>
+                </div>
+            )}
+
+            {/* Separate Large Timer Display */}
+            {(timerActive || timerPaused) && (
+                <div className="text-red-500 font-mono text-6xl font-bold animate-pulse">
+                    {timeLeft}
                 </div>
             )}
 
