@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, CheckCircle } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -25,6 +25,32 @@ const useLongPress = (callback = () => {}, ms = 800) => {
     onTouchStart: () => setStartLongPress(true),
     onTouchEnd: () => setStartLongPress(false),
   };
+};
+
+// --- Helper Functions ---
+const playSound = (type) => {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    if (type === 'ting') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
+        gain.gain.setValueAtTime(0.5, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.5);
+    } else if (type === 'end') {
+        // Double ting
+        playSound('ting');
+        setTimeout(() => playSound('ting'), 200);
+    }
 };
 
 // --- Components ---
@@ -140,7 +166,6 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
     setIsExtracting(true);
     setProgressText("Initializing extraction...");
 
-    // Simulate progress updates for user feedback
     const intervals = [
         setTimeout(() => setProgressText("Scanning PDF pages..."), 2000),
         setTimeout(() => setProgressText("Extracting raw images..."), 5000),
@@ -201,7 +226,6 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
         </div>
       </div>
       
-      {/* Progress Bar */}
       {isExtracting && (
         <div className="w-full h-1 bg-gray-800">
             <div className="animate-progress-indeterminate w-full h-full"></div>
@@ -308,6 +332,225 @@ const Auth = ({ setUser }) => {
       </p>
     </div>
   );
+};
+
+// 5. Dice Game
+const DiceGame = () => {
+    const [acts, setActs] = useState([]);
+    const [locations, setLocations] = useState([]);
+    const [result, setResult] = useState({ act: '?', loc: '?', time: '?' });
+    const [rolling, setRolling] = useState(false);
+    const [timerActive, setTimerActive] = useState(false);
+    const [timeLeft, setTimeLeft] = useState(0);
+    const [isEditing, setIsEditing] = useState(false);
+
+    useEffect(() => {
+        fetch(`${API_URL}/dice`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+            .then(res => res.json())
+            .then(data => {
+                setActs(data.filter(d => d.type === 'act'));
+                setLocations(data.filter(d => d.type === 'location'));
+            });
+    }, []);
+
+    const times = [10, 15, 30, 45, 60, '∞'];
+
+    const handleRoll = () => {
+        if (rolling) return;
+        setRolling(true);
+        setTimerActive(false); 
+        let steps = 0;
+        const interval = setInterval(() => {
+            setResult({
+                act: acts[Math.floor(Math.random() * acts.length)].text,
+                loc: locations[Math.floor(Math.random() * locations.length)].text,
+                time: times[Math.floor(Math.random() * times.length)]
+            });
+            steps++;
+            if (steps > 20) {
+                clearInterval(interval);
+                setRolling(false);
+            }
+        }, 100);
+    };
+
+    const startTimer = () => {
+        if (result.time === '?' || result.time === '∞') return;
+        playSound('ting');
+        setTimeLeft(parseInt(result.time));
+        setTimerActive(true);
+    };
+
+    useEffect(() => {
+        let interval = null;
+        if (timerActive && timeLeft > 0) {
+            interval = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+        } else if (timerActive && timeLeft === 0) {
+            playSound('end');
+            setTimerActive(false);
+        }
+        return () => clearInterval(interval);
+    }, [timerActive, timeLeft]);
+
+    if (isEditing) {
+        return (
+            <div className="p-4 pb-24 text-center">
+                <h2 className="text-gold text-2xl mb-4">Edit Dice</h2>
+                <div className="space-y-4 text-left">
+                    <div>
+                        <label className="text-white block mb-2">Actions (One per line)</label>
+                        <textarea className="w-full bg-gray-900 border border-gold p-2 rounded h-32 text-white" defaultValue={acts.map(a => a.text).join('\n')} id="editActs"/>
+                    </div>
+                    <div>
+                        <label className="text-white block mb-2">Locations (One per line)</label>
+                        <textarea className="w-full bg-gray-900 border border-gold p-2 rounded h-32 text-white" defaultValue={locations.map(a => a.text).join('\n')} id="editLocs"/>
+                    </div>
+                    <div className="flex gap-4">
+                        <button onClick={() => setIsEditing(false)} className="flex-1 py-3 bg-gray-700 rounded text-white">Cancel</button>
+                        <button onClick={async () => {
+                            const newActs = document.getElementById('editActs').value.split('\n').filter(Boolean).map(t => ({type:'act', text:t}));
+                            const newLocs = document.getElementById('editLocs').value.split('\n').filter(Boolean).map(t => ({type:'location', text:t}));
+                            await fetch(`${API_URL}/dice`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+                                body: JSON.stringify({ items: [...newActs, ...newLocs] })
+                            });
+                            window.location.reload();
+                        }} className="flex-1 py-3 bg-gold text-black font-bold rounded">Save</button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    return (
+        <div className="flex flex-col items-center justify-center min-h-[80vh] p-4 gap-8">
+            <div className="flex gap-4 w-full justify-center">
+                <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(128,0,32,0.8)]"><span className="text-white font-bold text-sm leading-tight">{result.act}</span></div>
+                <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(48,25,52,0.8)]"><span className="text-white font-bold text-sm leading-tight">{result.loc}</span></div>
+                <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(255,215,0,0.3)]">
+                    {timerActive ? <span className="text-red-500 font-mono text-3xl animate-pulse">{timeLeft}</span> : <span className="text-white font-bold text-xl">{result.time === '∞' ? '∞' : result.time + 's'}</span>}
+                </div>
+            </div>
+            {!rolling && result.time !== '?' && result.time !== '∞' && !timerActive && (
+                <button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>
+            )}
+            <button onClick={handleRoll} disabled={rolling || timerActive} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50">ROLL</button>
+            <button onClick={() => setIsEditing(true)} className="text-gray-500 flex items-center gap-2 mt-8"><Edit2 size={16} /> Edit Dice</button>
+        </div>
+    );
+};
+
+const LocationUnlocks = () => {
+    const [locations, setLocations] = useState([]);
+    const [newLoc, setNewLoc] = useState("");
+
+    useEffect(() => {
+        fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(setLocations);
+    }, []);
+
+    const toggleLoc = async (id, currentStatus) => {
+        await fetch(`${API_URL}/locations/${id}/toggle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ unlocked: !currentStatus })
+        });
+        const updated = locations.map(l => l.id === id ? {...l, unlocked_at: !currentStatus ? new Date().toISOString() : null} : l);
+        setLocations(updated);
+    };
+
+    const addLoc = async () => {
+        if(!newLoc) return;
+        const res = await fetch(`${API_URL}/locations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ name: newLoc })
+        });
+        if(res.ok) {
+            const data = await res.json();
+            setLocations([...locations, {id: data.id, name: data.name, unlocked_at: null}]);
+            setNewLoc("");
+        }
+    };
+
+    return (
+        <div>
+            <h2 className="text-gold text-3xl mb-6 flex items-center gap-2"><MapPin/> Locations</h2>
+            <div className="grid grid-cols-1 gap-3 mb-6">
+                {locations.map(loc => (
+                    <div key={loc.id} onClick={() => toggleLoc(loc.id, !!loc.unlocked_at)} className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer ${loc.unlocked_at ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}>
+                        <span className={`text-lg ${loc.unlocked_at ? 'text-gold' : 'text-gray-400'}`}>{loc.name}</span>
+                        {loc.unlocked_at ? <div className="text-right"><CheckCircle className="text-green-500 inline mb-1"/><div className="text-xs text-gray-500">{new Date(loc.unlocked_at).toLocaleDateString()}</div></div> : <div className="w-6 h-6 rounded-full border-2 border-gray-600"></div>}
+                    </div>
+                ))}
+            </div>
+            <div className="flex gap-2">
+                <input className="flex-1 bg-black border border-gray-600 rounded p-3 text-white" placeholder="Add custom location..." value={newLoc} onChange={e => setNewLoc(e.target.value)} />
+                <button onClick={addLoc} className="bg-gray-800 text-gold p-3 rounded hover:bg-gray-700"><Plus/></button>
+            </div>
+        </div>
+    );
+};
+
+const FantasyJar = () => {
+    const [wish, setWish] = useState("");
+    const [pulled, setPulled] = useState(null);
+
+    const handleDrop = async () => {
+        if(!wish.trim()) return;
+        await fetch(`${API_URL}/fantasies`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+            body: JSON.stringify({ text: wish })
+        });
+        setWish("");
+        alert("Wish dropped in the jar! 🤫");
+    };
+
+    const handlePull = async () => {
+        const res = await fetch(`${API_URL}/fantasies/pull`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        const data = await res.json();
+        if(data.empty) {
+            alert("The jar is empty! Add more fantasies.");
+        } else {
+            setPulled(data.text);
+        }
+    };
+
+    return (
+        <div className="flex flex-col items-center justify-center gap-8">
+            <h2 className="text-gold text-3xl font-caveat">The Fantasy Jar</h2>
+            {pulled ? (
+                <div className="bg-white/10 p-8 rounded-xl border-2 border-gold text-center animate-fadeIn w-full max-w-sm">
+                    <Sparkles className="text-gold mx-auto mb-4" size={40} />
+                    <p className="text-2xl text-white font-caveat">{pulled}</p>
+                    <button onClick={() => setPulled(null)} className="mt-6 text-gray-400 text-sm underline">Put away</button>
+                </div>
+            ) : (
+                <div onClick={handlePull} className="w-48 h-48 bg-white/5 border-4 border-gray-700 rounded-full flex items-center justify-center cursor-pointer hover:border-gold hover:shadow-[0_0_30px_#FFD700] transition group">
+                    <span className="text-gray-500 group-hover:text-gold font-bold text-xl">Tap to Pull</span>
+                </div>
+            )}
+            <div className="w-full max-w-sm mt-8">
+                <textarea className="w-full bg-black border border-gray-700 rounded p-4 text-white mb-2 focus:border-burgundy outline-none" placeholder="Whisper a fantasy..." value={wish} onChange={e => setWish(e.target.value)} />
+                <button onClick={handleDrop} className="w-full bg-burgundy text-white py-3 rounded font-bold hover:bg-red-800 transition">Drop in Jar</button>
+            </div>
+        </div>
+    );
+};
+
+// 6. Extras Tab (Locations + Jar)
+const Extras = () => {
+    return (
+        <div className="p-4 pb-24 space-y-12">
+            <LocationUnlocks />
+            <div className="border-t border-gray-800"></div>
+            <FantasyJar />
+        </div>
+    );
 };
 
 const Spin = () => {
@@ -1115,6 +1358,14 @@ const Layout = ({ children, user, logout }) => {
           <Aperture size={24} />
           <span className="text-xs">Spin</span>
         </Link>
+        <Link to="/dice" className={`flex flex-col items-center ${location.pathname === '/dice' ? 'text-lipstick' : 'text-gray-500'}`}>
+          <Dices size={24} />
+          <span className="text-xs">Dice</span>
+        </Link>
+        <Link to="/extras" className={`flex flex-col items-center ${location.pathname === '/extras' ? 'text-lipstick' : 'text-gray-500'}`}>
+          <Sparkles size={24} />
+          <span className="text-xs">Extras</span>
+        </Link>
         <Link to="/books" className={`flex flex-col items-center ${location.pathname === '/books' ? 'text-lipstick' : 'text-gray-500'}`}>
           <Book size={24} />
           <span className="text-xs">Books</span>
@@ -1175,6 +1426,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/spin" element={<Spin />} />
+          <Route path="/dice" element={<DiceGame />} />
+          <Route path="/extras" element={<Extras />} />
           <Route path="/books" element={<Books />} />
           <Route path="/settings" element={<Settings user={user} logout={logout} />} />
           <Route path="/notifications" element={<Notifications />} />
