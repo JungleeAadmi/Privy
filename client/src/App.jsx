@@ -4,6 +4,45 @@ import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2,
 
 const API_URL = '/api';
 
+// --- Error Boundary ---
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  handleReset() {
+    localStorage.clear();
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+    }
+    window.location.reload();
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-black text-gold p-6 text-center font-caveat">
+          <AlertTriangle size={64} className="mb-4 text-red-500" />
+          <h1 className="text-4xl mb-4">Oops!</h1>
+          <p className="text-xl mb-8">The app crashed. This usually happens if data gets corrupted.</p>
+          <button 
+            onClick={this.handleReset}
+            className="px-6 py-3 bg-burgundy rounded-full text-white font-bold shadow-lg flex items-center gap-2 hover:bg-red-700 transition"
+          >
+            <RefreshCw size={20} /> Reset & Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // --- Hooks ---
 const useLongPress = (callback = () => {}, ms = 800) => {
   const [startLongPress, setStartLongPress] = useState(false);
@@ -29,39 +68,36 @@ const useLongPress = (callback = () => {}, ms = 800) => {
 
 // --- Helper Functions ---
 const playSound = (type) => {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
-    
-    // Ensure context is running (fixes issues where audio is suspended by default)
-    if (ctx.state === 'suspended') {
-        ctx.resume();
-    }
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        
+        if (ctx.state === 'suspended') ctx.resume();
 
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    
-    if (type === 'ting') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(800, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
-        gain.gain.setValueAtTime(0.5, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.5);
-    } else if (type === 'end') {
-        // Double ting
-        playSound('ting');
-        setTimeout(() => playSound('ting'), 200);
-    }
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        if (type === 'ting') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
+            gain.gain.setValueAtTime(0.5, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.5);
+        } else if (type === 'end') {
+            playSound('ting');
+            setTimeout(() => playSound('ting'), 200);
+        }
+    } catch(e) { console.warn("Audio error", e); }
 };
 
 // --- Components ---
 
-// 1. Triple Tap Reveal Card
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
@@ -113,19 +149,21 @@ const RevealCard = ({ image, id, onRevealComplete }) => {
   );
 };
 
-// 2. History List Component
 const HistoryList = ({ cardId, onClose }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchHistory = async () => {
-      const res = await fetch(`${API_URL}/cards/${cardId}/history`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      if (res.ok) {
-        setHistory(await res.json());
-      }
+      try {
+        const res = await fetch(`${API_URL}/cards/${cardId}/history`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) setHistory(data);
+        }
+      } catch(e) { console.error(e); }
       setLoading(false);
     };
     fetchHistory();
@@ -161,7 +199,6 @@ const HistoryList = ({ cardId, onClose }) => {
   );
 };
 
-// 3. PDF Viewer Modal
 const PDFViewer = ({ url, title, bookId, onClose }) => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [progressText, setProgressText] = useState("");
@@ -260,7 +297,6 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   );
 };
 
-// 4. Section Tab Component
 const SectionTab = ({ section, activeSection, setActiveSection, onLongPress }) => {
     const longPressProps = useLongPress(() => {
         if (onLongPress) onLongPress(section);
@@ -291,22 +327,24 @@ const Auth = ({ setUser }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const endpoint = isLogin ? '/login' : '/register';
-    const res = await fetch(`${API_URL}${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form)
-    });
-    const data = await res.json();
-    if (data.token) {
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      setUser(data.user);
-    } else if (data.success) {
-      setIsLogin(true); 
-    } else {
-      alert(data.error);
-    }
+    try {
+      const endpoint = isLogin ? '/login' : '/register';
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      const data = await res.json();
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        setUser(data.user);
+      } else if (data.success) {
+        setIsLogin(true); 
+      } else {
+        alert(data.error);
+      }
+    } catch(e) { alert("Network Error"); }
   };
 
   return (
@@ -340,7 +378,161 @@ const Auth = ({ setUser }) => {
   );
 };
 
-// 5. Dice Game
+const Spin = () => {
+    const [cards, setCards] = useState([]);
+    const [sections, setSections] = useState([]);
+    const [activeSection, setActiveSection] = useState(null);
+    const [rotation, setRotation] = useState(0);
+    const [isSpinning, setIsSpinning] = useState(false);
+    const [winner, setWinner] = useState(null); 
+    const [showHistory, setShowHistory] = useState(false);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            const token = localStorage.getItem('token');
+            const headers = { Authorization: `Bearer ${token}` };
+            try {
+                const [cardsRes, sectionsRes] = await Promise.all([
+                    fetch(`${API_URL}/cards`, { headers }),
+                    fetch(`${API_URL}/sections`, { headers })
+                ]);
+                if (cardsRes.ok && sectionsRes.ok) {
+                    const cData = await cardsRes.json();
+                    const sData = await sectionsRes.json();
+                    if(Array.isArray(cData)) setCards(cData);
+                    if(Array.isArray(sData)) setSections(sData);
+                }
+            } catch (e) { console.error(e); }
+        };
+        fetchData();
+    }, []);
+
+    const handleSpin = () => {
+        if (isSpinning) return;
+
+        const pool = cards.filter(c => {
+            if (activeSection === null) return c.section_id == null; 
+            return c.section_id === activeSection;
+        });
+
+        if (pool.length === 0) {
+            alert("No cards in this section to spin!");
+            return;
+        }
+
+        setIsSpinning(true);
+        setWinner(null);
+
+        const SEGMENT_COUNT = 16;
+        const slots = Array.from({length: SEGMENT_COUNT}, () => pool[Math.floor(Math.random() * pool.length)]);
+        const winningIndex = Math.floor(Math.random() * SEGMENT_COUNT);
+        const winningCard = slots[winningIndex];
+
+        const segmentAngle = 360 / SEGMENT_COUNT; 
+        const offsetToCenter = (winningIndex * segmentAngle) + (segmentAngle / 2);
+        const targetAngle = 360 - offsetToCenter; 
+        
+        let delta = targetAngle - (rotation % 360);
+        if (delta < 0) delta += 360;
+        
+        const totalRotation = rotation + (5 * 360) + delta;
+        setRotation(totalRotation);
+
+        setTimeout(() => {
+            setIsSpinning(false);
+            setWinner(winningCard);
+            fetch(`${API_URL}/cards/${winningCard.id}/scratch`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
+        }, 4000);
+    };
+
+    return (
+        <div className="flex flex-col items-center w-full min-h-full py-4">
+            <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">
+                {sections.map(s => (
+                    <SectionTab 
+                        key={s.id} 
+                        section={s} 
+                        activeSection={activeSection} 
+                        setActiveSection={setActiveSection} 
+                        onLongPress={null} 
+                    />
+                ))}
+            </div>
+
+            <div className="relative w-80 h-80 shrink-0">
+                <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
+
+                <div 
+                    className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden"
+                    style={{
+                        transform: `rotate(${rotation}deg)`,
+                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                        background: `conic-gradient(
+                          ${Array.from({length: 16}).map((_, i) => 
+                            `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`
+                          ).join(', ')}
+                        )`
+                    }}
+                >
+                    {Array.from({length: 16}).map((_, i) => (
+                        <div 
+                            key={i}
+                            className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom"
+                            style={{
+                                transform: `rotate(${i * 22.5 + 11.25}deg)`, 
+                            }}
+                        >
+                            <span 
+                                className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl"
+                            >
+                                {i + 1}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+
+                <button 
+                    onClick={handleSpin}
+                    disabled={isSpinning}
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-gold border-4 border-burgundy shadow-[0_0_20px_#FFD700] flex items-center justify-center z-10 active:scale-95 transition disabled:opacity-50 disabled:scale-100"
+                >
+                    <span className="text-burgundy font-black text-xl font-sans tracking-widest">SPIN</span>
+                </button>
+            </div>
+
+            {winner && (
+                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black">
+                        <button onClick={() => setWinner(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button>
+                        
+                        <div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center"> 
+                            {showHistory ? (
+                                <HistoryList cardId={winner.id} onClose={() => setShowHistory(false)}/>
+                            ) : (
+                                <img src={winner.filepath} alt="Winner" className="max-w-full max-h-full object-contain" />
+                            )}
+                        </div>
+
+                        <div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4">
+                            <h3 className="text-gold text-2xl font-caveat mb-2">The Wheel has Spoken!</h3>
+                            <button 
+                                onClick={() => setShowHistory(!showHistory)}
+                                className="flex items-center gap-2 text-white/50 text-sm hover:text-white transition"
+                            >
+                                <Heart size={16} className="fill-lipstick text-lipstick"/> 
+                                <span>Revealed {winner.scratched_count + 1} times</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const DiceGame = () => {
     const [acts, setActs] = useState([]);
     const [locations, setLocations] = useState([]);
@@ -355,9 +547,12 @@ const DiceGame = () => {
         fetch(`${API_URL}/dice`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
             .then(res => res.json())
             .then(data => {
-                setActs(data.filter(d => d.type === 'act'));
-                setLocations(data.filter(d => d.type === 'location'));
-            });
+                if(Array.isArray(data)) {
+                    setActs(data.filter(d => d.type === 'act'));
+                    setLocations(data.filter(d => d.type === 'location'));
+                }
+            })
+            .catch(console.error);
     }, []);
 
     const generateTime = () => {
@@ -455,16 +650,10 @@ const DiceGame = () => {
                 <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(128,0,32,0.8)]"><span className="text-white font-bold text-sm leading-tight">{result.act}</span></div>
                 <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(48,25,52,0.8)]"><span className="text-white font-bold text-sm leading-tight">{result.loc}</span></div>
                 <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(255,215,0,0.3)]">
-                    {/* Fixed overlapping: Use explicit condition rendering */}
-                    {(timerActive || timerPaused) ? (
-                        <span className="text-red-500 font-mono text-3xl animate-pulse">{timeLeft}</span>
-                    ) : (
-                        <span className="text-white font-bold text-xl">{result.time === '∞' ? '∞' : result.time + 's'}</span>
-                    )}
+                    {timerActive || timerPaused ? <span className="text-red-500 font-mono text-3xl animate-pulse">{timeLeft}</span> : <span className="text-white font-bold text-xl">{result.time === '∞' ? '∞' : result.time + 's'}</span>}
                 </div>
             </div>
 
-            {/* Sentence Generation Display */}
             {(!rolling && result.act !== '?' && result.loc !== '?' && result.time !== '?') && (
                 <div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn">
                     <p className="text-white text-lg font-caveat">
@@ -482,7 +671,6 @@ const DiceGame = () => {
                        ) : (
                            <button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>
                        )}
-                       
                        {(timerActive || timerPaused) && (
                            <button onClick={stopTimer} className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg"><Square fill="white" size={28} /></button>
                        )}
@@ -503,7 +691,12 @@ const LocationUnlocks = () => {
     const [menuTarget, setMenuTarget] = useState(null);
 
     const fetchLocs = () => {
-        fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(setLocations);
+        fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+            .then(res => res.json())
+            .then(data => {
+                if(Array.isArray(data)) setLocations(data);
+            })
+            .catch(console.error);
     };
 
     useEffect(() => { fetchLocs(); }, []);
@@ -582,7 +775,6 @@ const LocationUnlocks = () => {
                 <button onClick={addLoc} className="bg-gray-800 text-gold p-3 rounded hover:bg-gray-700"><Plus/></button>
             </div>
             
-            {/* Location Options Modal */}
             {menuTarget && (
                 <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
                     <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center">
@@ -608,7 +800,10 @@ const FantasyJar = () => {
     const fetchHistory = () => {
         fetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
             .then(res => res.json())
-            .then(setHistory);
+            .then(data => {
+                if(Array.isArray(data)) setHistory(data);
+            })
+            .catch(console.error);
     };
 
     useEffect(() => { fetchHistory(); }, []);
@@ -724,16 +919,6 @@ const FantasyJar = () => {
     );
 };
 
-const Extras = () => {
-    return (
-        <div className="p-4 pb-24 space-y-12">
-            <LocationUnlocks />
-            <div className="border-t border-gray-800"></div>
-            <FantasyJar />
-        </div>
-    );
-};
-
 const Home = () => {
   const [cards, setCards] = useState([]);
   const [sections, setSections] = useState([]);
@@ -763,13 +948,14 @@ const Home = () => {
         const sectionsData = await sectionsRes.json();
         
         setCards(prev => {
+           if (!Array.isArray(cardsData)) return prev;
            if(prev.length !== cardsData.length) return cardsData.sort(() => Math.random() - 0.5);
            return cardsData.map(c => {
              const old = prev.find(p => p.id === c.id);
              return old ? {...c} : c;
            });
         });
-        setSections(sectionsData);
+        if(Array.isArray(sectionsData)) setSections(sectionsData);
       }
     } catch (e) { console.error("Sync error", e); }
   };
@@ -1000,7 +1186,7 @@ const Home = () => {
               <button onClick={() => setSelectedCard(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button>
               <div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center"> 
                  {showHistory ? (
-                    <HistoryList cardId={selectedCard.id} />
+                    <HistoryList cardId={selectedCard.id} onClose={() => setShowHistory(false)}/>
                  ) : (
                     <RevealCard 
                       id={selectedCard.id} 
@@ -1015,9 +1201,7 @@ const Home = () => {
                   className="flex items-center gap-2 text-gold text-xl bg-white/5 px-6 py-2 rounded-full border border-gold/30 hover:bg-gold/20 transition active:scale-95"
                 >
                   <Heart size={20} className={showHistory ? "text-gray-400" : "fill-lipstick text-lipstick"}/> 
-                  <span>
-                      {showHistory ? "Back to Card" : `Revealed ${cards.find(c => c.id === selectedCard.id)?.scratched_count || 0} times`}
-                  </span>
+                  <span>{showHistory ? "Back to Card" : `Revealed ${cards.find(c => c.id === selectedCard.id)?.scratched_count || 0} times`}</span>
                 </button>
               </div>
            </div>
@@ -1041,436 +1225,47 @@ const Home = () => {
   );
 };
 
-const Spin = () => {
-    const [cards, setCards] = useState([]);
-    const [sections, setSections] = useState([]);
-    const [activeSection, setActiveSection] = useState(null);
-    const [rotation, setRotation] = useState(0);
-    const [isSpinning, setIsSpinning] = useState(false);
-    const [winner, setWinner] = useState(null); 
-    const [showHistory, setShowHistory] = useState(false);
-
-    useEffect(() => {
-        const fetchData = async () => {
-            const token = localStorage.getItem('token');
-            const headers = { Authorization: `Bearer ${token}` };
-            try {
-                const [cardsRes, sectionsRes] = await Promise.all([
-                    fetch(`${API_URL}/cards`, { headers }),
-                    fetch(`${API_URL}/sections`, { headers })
-                ]);
-                if (cardsRes.ok && sectionsRes.ok) {
-                    setCards(await cardsRes.json());
-                    setSections(await sectionsRes.json());
-                }
-            } catch (e) { console.error(e); }
-        };
-        fetchData();
-    }, []);
-
-    const handleSpin = () => {
-        if (isSpinning) return;
-
-        const pool = cards.filter(c => {
-            if (activeSection === null) return c.section_id == null; 
-            return c.section_id === activeSection;
-        });
-
-        if (pool.length === 0) {
-            alert("No cards in this section to spin!");
-            return;
-        }
-
-        setIsSpinning(true);
-        setWinner(null);
-
-        const SEGMENT_COUNT = 16;
-        const slots = Array.from({length: SEGMENT_COUNT}, () => pool[Math.floor(Math.random() * pool.length)]);
-        const winningIndex = Math.floor(Math.random() * SEGMENT_COUNT);
-        const winningCard = slots[winningIndex];
-
-        const segmentAngle = 360 / SEGMENT_COUNT; 
-        
-        const offsetToCenter = (winningIndex * segmentAngle) + (segmentAngle / 2);
-        const targetAngle = 360 - offsetToCenter; 
-        
-        let delta = targetAngle - (rotation % 360);
-        if (delta < 0) delta += 360;
-        
-        const totalRotation = rotation + (5 * 360) + delta;
-        
-        setRotation(totalRotation);
-
-        setTimeout(() => {
-            setIsSpinning(false);
-            setWinner(winningCard);
-            
-            fetch(`${API_URL}/cards/${winningCard.id}/scratch`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-            });
-        }, 4000);
-    };
-
-    return (
-        <div className="flex flex-col items-center w-full min-h-full py-4">
-            {/* Sections Bar */}
-            <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">
-                {sections.map(s => (
-                    <SectionTab 
-                        key={s.id} 
-                        section={s} 
-                        activeSection={activeSection} 
-                        setActiveSection={setActiveSection} 
-                        onLongPress={null} 
-                    />
-                ))}
-            </div>
-
-            {/* Wheel Container */}
-            <div className="relative w-80 h-80 shrink-0">
-                <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
-
-                <div 
-                    className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden"
-                    style={{
-                        transform: `rotate(${rotation}deg)`,
-                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)',
-                        background: `conic-gradient(
-                          ${Array.from({length: 16}).map((_, i) => 
-                            `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`
-                          ).join(', ')}
-                        )`
-                    }}
-                >
-                    {Array.from({length: 16}).map((_, i) => (
-                        <div 
-                            key={i}
-                            className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom"
-                            style={{
-                                transform: `rotate(${i * 22.5 + 11.25}deg)`, 
-                            }}
-                        >
-                            <span 
-                                className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl"
-                            >
-                                {i + 1}
-                            </span>
-                        </div>
-                    ))}
-                </div>
-
-                <button 
-                    onClick={handleSpin}
-                    disabled={isSpinning}
-                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-gold border-4 border-burgundy shadow-[0_0_20px_#FFD700] flex items-center justify-center z-10 active:scale-95 transition disabled:opacity-50 disabled:scale-100"
-                >
-                    <span className="text-burgundy font-black text-xl font-sans tracking-widest">SPIN</span>
-                </button>
-            </div>
-
-            {winner && (
-                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-                    <div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black">
-                        <button onClick={() => setWinner(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button>
-                        
-                        <div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center"> 
-                            {showHistory ? (
-                                <HistoryList cardId={winner.id} onClose={() => setShowHistory(false)}/>
-                            ) : (
-                                <img src={winner.filepath} alt="Winner" className="max-w-full max-h-full object-contain" />
-                            )}
-                        </div>
-
-                        <div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4">
-                            <h3 className="text-gold text-2xl font-caveat mb-2">The Wheel has Spoken!</h3>
-                            <button 
-                                onClick={() => setShowHistory(!showHistory)}
-                                className="flex items-center gap-2 text-white/50 text-sm hover:text-white transition"
-                            >
-                                <Heart size={16} className="fill-lipstick text-lipstick"/> 
-                                <span>Revealed {winner.scratched_count + 1} times</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-const Settings = ({ user, logout }) => {
-  const [form, setForm] = useState({ ...user, password: '' });
-
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    await fetch(`${API_URL}/user`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
-      body: JSON.stringify(form)
-    });
-    alert('Profile Updated');
-  };
-
-  return (
-    <div className="p-6 text-gold pb-24">
-      <h2 className="text-3xl mb-6">Profile Settings</h2>
-      <form onSubmit={handleUpdate} className="max-w-md mx-auto space-y-4">
-        <div className="space-y-4 border-b border-gold/30 pb-6">
-            <div>
-            <label>Display Name</label>
-            <input className="w-full p-2 bg-gray-800 rounded border border-burgundy" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-            </div>
-            <div>
-            <label>Change Password (Optional)</label>
-            <input className="w-full p-2 bg-gray-800 rounded border border-burgundy" type="password" onChange={e => setForm({...form, password: e.target.value})} />
-            </div>
-        </div>
-        <button className="w-full bg-gold text-black font-bold p-3 rounded hover:bg-yellow-600">Save Changes</button>
-      </form>
-    </div>
-  );
-};
-
-const Notifications = () => {
-  const [ntfy, setNtfy] = useState({ ntfy_url: '', ntfy_topic: '' });
-
-  useEffect(() => {
-    fetch(`${API_URL}/settings`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
-      .then(res => res.json())
-      .then(setNtfy)
-      .catch(console.error);
-  }, []);
-
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    await fetch(`${API_URL}/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
-        body: JSON.stringify(ntfy)
-    });
-    alert('Notification Settings Updated');
-  };
-
-  const handleTestNtfy = async () => {
-    const res = await fetch(`${API_URL}/settings/test`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
-        body: JSON.stringify(ntfy)
-    });
-    
-    if (res.ok) alert('Notification Sent! Check your device.');
-    else alert('Failed to send notification. Check URL/Topic.');
-  };
-
-  return (
-    <div className="p-6 text-gold pb-24">
-      <h2 className="text-3xl mb-6">Notifications</h2>
-      <form onSubmit={handleUpdate} className="max-w-md mx-auto space-y-4">
-        <div className="space-y-4 border-b border-gold/30 pb-6 relative">
-            <div className="flex justify-between items-center">
-                <h3 className="text-xl text-white/80 flex items-center gap-2"><Bell size={20}/> Ntfy Configuration</h3>
-                <button type="button" onClick={handleTestNtfy} className="flex items-center gap-1 bg-burgundy/80 hover:bg-burgundy px-3 py-1 rounded text-white text-sm">
-                    <Send size={14} /> Test
-                </button>
-            </div>
-            <div>
-            <label>Server URL (e.g. https://ntfy.sh)</label>
-            <input 
-                className="w-full p-2 bg-gray-800 rounded border border-burgundy" 
-                value={ntfy.ntfy_url || ''} 
-                onChange={e => setNtfy({...ntfy, ntfy_url: e.target.value})} 
-                placeholder="https://ntfy.sh"
-            />
-            </div>
-            <div>
-            <label>Topic Name</label>
-            <input 
-                className="w-full p-2 bg-gray-800 rounded border border-burgundy" 
-                value={ntfy.ntfy_topic || ''} 
-                onChange={e => setNtfy({...ntfy, ntfy_topic: e.target.value})} 
-                placeholder="my_secret_couple_channel"
-            />
-            </div>
-        </div>
-        <button className="w-full bg-gold text-black font-bold p-3 rounded hover:bg-yellow-600">Save Changes</button>
-      </form>
-    </div>
-  );
-};
-
-const Layout = ({ children, user, logout }) => {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const location = useLocation();
-  
-  // Reset App Modal States
-  const [showResetModal, setShowResetModal] = useState(false);
-  const [resetStep, setResetStep] = useState(1);
-  const [resetInput, setResetInput] = useState("");
-
-  const handleReload = async () => {
-    if ('serviceWorker' in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      for (const registration of registrations) {
-        await registration.unregister();
-      }
-    }
-    window.location.reload(true);
-  };
-
-  const handleResetSubmit = async () => {
-    if (resetInput !== 'RESET') {
-        alert("Please type 'RESET' exactly.");
-        return;
-    }
-
-    if (resetStep === 1) {
-        setResetStep(2);
-        setResetInput("");
-    } else {
-        await fetch(`${API_URL}/reset-app`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        });
-        alert("App has been reset.");
-        setShowResetModal(false);
-        setResetStep(1);
-        setResetInput("");
-        handleReload();
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 w-full h-full bg-black text-white font-caveat selection:bg-lipstick flex flex-col overflow-hidden">
-      <header className="flex-none w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-2 flex justify-between items-center shadow-lg">
-        <div className="flex items-center gap-3">
-          <img src="/apple-touch-icon.png" alt="Logo" className="w-10 h-10 rounded-full border border-gold shadow-md" />
-          <div className="flex flex-col">
-            <h1 className="text-2xl text-gold tracking-widest leading-none">Privy</h1>
-            <span className="text-xl text-gray-400 -mt-1">@{user?.username}</span>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-4">
-            <button onClick={handleReload} className="text-gold/80 hover:text-gold focus:outline-none active:rotate-180 transition-transform duration-500">
-              <RefreshCw size={24} />
-            </button>
-
-            <button onClick={() => setMenuOpen(!menuOpen)} className="text-gold focus:outline-none">
-              {menuOpen ? <X size={28} /> : <div className="space-y-1">
-                 <div className="w-6 h-0.5 bg-gold"></div>
-                 <div className="w-6 h-0.5 bg-gold"></div>
-                 <div className="w-6 h-0.5 bg-gold"></div>
-              </div>}
-            </button>
-        </div>
-      </header>
-      
-      {/* Mobile Menu Overlay */}
-      {menuOpen && (
-        <div className="absolute top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-50 p-4 shadow-2xl transform transition-transform">
-           <div className="flex flex-col gap-4 text-xl">
-             <Link to="/settings" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><User size={20}/> Profile</Link>
-             <Link to="/notifications" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><Bell size={20}/> Notifications</Link>
-             
-             <div className="my-2 border-t border-gray-700"></div>
-             
-             <button onClick={() => { setShowResetModal(true); setMenuOpen(false); }} className="flex items-center gap-3 p-2 text-red-400 hover:bg-white/10 rounded"><RotateCcw size={20}/> Reset App</button>
-             <button onClick={logout} className="flex items-center gap-3 p-2 text-lipstick hover:bg-white/10 rounded"><LogOut size={20}/> Logout</button>
-           </div>
-        </div>
-      )}
-
-      {/* Main Content Area - Scrollable */}
-      <main className="flex-1 overflow-y-auto bg-gradient-to-b from-black via-eggplant/20 to-black relative">
-        {children}
-      </main>
-      
-      {/* Bottom Nav */}
-      <nav className="flex-none w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50">
-        <Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}>
-          <Layers size={24} />
-          <span className="text-xs">Cards</span>
-        </Link>
-        <Link to="/spin" className={`flex flex-col items-center ${location.pathname === '/spin' ? 'text-lipstick' : 'text-gray-500'}`}>
-          <Aperture size={24} />
-          <span className="text-xs">Spin</span>
-        </Link>
-        <Link to="/dice" className={`flex flex-col items-center ${location.pathname === '/dice' ? 'text-lipstick' : 'text-gray-500'}`}>
-          <Dices size={24} />
-          <span className="text-xs">Dice</span>
-        </Link>
-        <Link to="/extras" className={`flex flex-col items-center ${location.pathname === '/extras' ? 'text-lipstick' : 'text-gray-500'}`}>
-          <Sparkles size={24} />
-          <span className="text-xs">Extras</span>
-        </Link>
-        <Link to="/books" className={`flex flex-col items-center ${location.pathname === '/books' ? 'text-lipstick' : 'text-gray-500'}`}>
-          <Book size={24} />
-          <span className="text-xs">Books</span>
-        </Link>
-      </nav>
-
-      {/* Reset Modal */}
-      {showResetModal && (
-        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4">
-            <div className="bg-gray-900 border border-red-500 p-6 rounded-xl w-80 text-center shadow-2xl">
-                <AlertTriangle size={48} className="mx-auto text-red-500 mb-4" />
-                <h3 className="text-white text-2xl mb-2 font-bold">App Reset</h3>
-                <p className="text-gray-400 text-sm mb-6">
-                    {resetStep === 1 
-                        ? "This will reset all scratch counts and history to zero. This cannot be undone." 
-                        : "Are you really sure? This is your last chance."}
-                </p>
-                
-                <input 
-                    className="w-full p-3 bg-black border border-gray-700 rounded text-white text-center tracking-widest mb-4 uppercase"
-                    placeholder="Type RESET"
-                    value={resetInput}
-                    onChange={e => setResetInput(e.target.value.toUpperCase())}
-                />
-
-                <div className="flex justify-center gap-4">
-                    <button onClick={() => { setShowResetModal(false); setResetStep(1); setResetInput(""); }} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button>
-                    <button 
-                        onClick={handleResetSubmit} 
-                        className={`px-4 py-2 rounded font-bold text-white ${resetInput === 'RESET' ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 cursor-not-allowed'}`}
-                        disabled={resetInput !== 'RESET'}
-                    >
-                        {resetStep === 1 ? "Next Step" : "CONFIRM RESET"}
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
 export default function App() {
   const [user, setUser] = useState(null);
+
+  // Safe user parsing to prevent black screen
   useEffect(() => {
-    const saved = localStorage.getItem('user');
-    if (saved) setUser(JSON.parse(saved));
+    try {
+        const saved = localStorage.getItem('user');
+        if (saved) setUser(JSON.parse(saved));
+    } catch (e) {
+        console.error("Failed to parse user data, logging out.");
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+    }
   }, []);
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
   };
-  if (!user) return <Auth setUser={setUser} />;
+
+  // Wrap everything in ErrorBoundary
   return (
-    <Router>
-      <Layout user={user} logout={logout}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/spin" element={<Spin />} />
-          <Route path="/dice" element={<DiceGame />} />
-          <Route path="/extras" element={<Extras />} />
-          <Route path="/books" element={<Books />} />
-          <Route path="/settings" element={<Settings user={user} logout={logout} />} />
-          <Route path="/notifications" element={<Notifications />} />
-        </Routes>
-      </Layout>
-    </Router>
+    <ErrorBoundary>
+        {!user ? (
+            <Auth setUser={setUser} />
+        ) : (
+            <Router>
+                <Layout user={user} logout={logout}>
+                    <Routes>
+                    <Route path="/" element={<Home />} />
+                    <Route path="/spin" element={<Spin />} />
+                    <Route path="/dice" element={<DiceGame />} />
+                    <Route path="/extras" element={<Extras />} />
+                    <Route path="/books" element={<Books />} />
+                    <Route path="/settings" element={<Settings user={user} logout={logout} />} />
+                    <Route path="/notifications" element={<Notifications />} />
+                    </Routes>
+                </Layout>
+            </Router>
+        )}
+    </ErrorBoundary>
   );
 }

@@ -88,7 +88,12 @@ db.serialize(() => {
         count INTEGER DEFAULT 0
     )`);
     
-    db.run(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`, (err) => {});
+    // Migration: Add count column safely
+    db.run(`PRAGMA table_info(location_unlocks)`, (err, rows) => {
+        // Simple check is tough in async logic, so we just try to add it and ignore error
+        // But for SQLite, we can just run it. If it fails, it fails (column exists).
+        db.run(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`, () => {});
+    });
 
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -433,7 +438,7 @@ app.delete('/api/books/:id', auth, (req, res) => {
 
 app.post('/api/books/:id/extract', auth, (req, res) => {
     const bookId = req.params.id;
-    req.setTimeout(1200000); // 20 min timeout for large PDFs
+    req.setTimeout(1200000); 
     db.get(`SELECT * FROM books WHERE id = ?`, [bookId], (err, book) => {
         if (err || !book) return res.status(404).json({ error: 'Book not found' });
 
@@ -450,7 +455,6 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
             const tempDir = path.join(DATA_DIR, 'uploads', 'temp_' + Date.now());
             fs.mkdirSync(tempDir);
 
-            // -png: Output png
             const cmd = `pdfimages -png "${absBookPath}" "${tempDir}/img"`;
             
             exec(cmd, { maxBuffer: 1024 * 1024 * 100, timeout: 600000 }, (error, stdout, stderr) => {
