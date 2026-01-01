@@ -34,7 +34,10 @@ class ErrorBoundary extends React.Component {
           <AlertTriangle size={64} className="mb-4 text-red-500" />
           <h1 className="text-4xl mb-4 font-bold">App Crashed</h1>
           <p className="text-sm mb-8 text-gray-300 break-all">{this.state.error?.message || "Unknown Error"}</p>
-          <button onClick={this.handleReset} className="px-6 py-3 bg-red-600 rounded-full text-white font-bold shadow-lg flex items-center gap-2">
+          <button 
+            onClick={this.handleReset}
+            className="px-6 py-3 bg-red-600 rounded-full text-white font-bold shadow-lg flex items-center gap-2"
+          >
             <RefreshCw size={20} /> Force Reset
           </button>
         </div>
@@ -95,27 +98,42 @@ const playSound = (type) => {
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Global Sub-Components (Defined OUTSIDE to fix crashes) ---
+// --- Top-Level Components ---
 
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
   const tapTimer = useRef(null);
-  useEffect(() => { setIsRevealed(false); tapCount.current = 0; }, [image]);
-  const handleInteraction = () => {
+
+  useEffect(() => {
+    setIsRevealed(false);
+    tapCount.current = 0;
+  }, [image]);
+
+  const handleInteraction = (e) => {
     if (tapTimer.current) clearTimeout(tapTimer.current);
     tapCount.current += 1;
     if (tapCount.current === 3) {
-      if (!isRevealed) { setIsRevealed(true); onRevealComplete(id); }
+      if (!isRevealed) {
+        setIsRevealed(true);
+        onRevealComplete(id);
+      }
       tapCount.current = 0;
-    } else { tapTimer.current = setTimeout(() => { tapCount.current = 0; }, 400); }
+    } else {
+      tapTimer.current = setTimeout(() => {
+        tapCount.current = 0;
+      }, 400); 
+    }
   };
+
   return (
     <div className="relative w-full h-full bg-black select-none overflow-hidden flex items-center justify-center" onClick={handleInteraction}>
       <img src={image} alt="Secret" className="max-w-full max-h-full object-contain pointer-events-none" />
       {!isRevealed && (
         <div className="absolute inset-0 z-10 flex items-center justify-center p-4" style={{ backgroundImage: `conic-gradient(#301934 0.25turn, #000 0.25turn 0.5turn, #301934 0.5turn 0.75turn, #000 0.75turn)`, backgroundSize: '50px 50px', backgroundPosition: 'top left' }}>
-          <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl border-2 border-gold/50 shadow-[0_0_20px_rgba(255,215,0,0.3)] animate-pulse select-none pointer-events-none"><span className="text-gold font-caveat text-3xl drop-shadow-md">Triple Tap</span></div>
+          <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl border-2 border-gold/50 shadow-[0_0_20px_rgba(255,215,0,0.3)] animate-pulse select-none pointer-events-none">
+            <span className="text-gold font-caveat text-3xl drop-shadow-md">Triple Tap</span>
+          </div>
         </div>
       )}
     </div>
@@ -125,23 +143,55 @@ const RevealCard = ({ image, id, onRevealComplete }) => {
 const HistoryList = ({ cardId, onClose }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    let mounted = true;
-    fetch(`${API_URL}/cards/${cardId}/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
-      .then(r => r.ok ? r.json() : [])
-      .then(d => { if(mounted) { setHistory(Array.isArray(d) ? d : []); setLoading(false); } })
-      .catch(() => { if(mounted) setLoading(false); });
-    return () => { mounted = false; };
+    let isMounted = true;
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch(`${API_URL}/cards/${cardId}/history`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (isMounted && Array.isArray(data)) setHistory(data);
+        }
+      } catch(e) { console.error(e); }
+      if (isMounted) setLoading(false);
+    };
+    fetchHistory();
+    return () => { isMounted = false; };
   }, [cardId]);
-  
+
+  const formatDate = (ts) => {
+    try {
+        const date = new Date(ts.endsWith('Z') ? ts : ts + 'Z'); 
+        if (isNaN(date.getTime())) return "Unknown Date";
+        return date.toLocaleDateString();
+    } catch { return "Error Date"; }
+  };
+
+  const formatTime = (ts) => {
+    try {
+        const date = new Date(ts.endsWith('Z') ? ts : ts + 'Z');
+        if (isNaN(date.getTime())) return "--:--";
+        return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    } catch { return "--:--"; }
+  };
+
   return (
     <div className="w-full h-full bg-gray-900 p-4 overflow-y-auto animate-fadeIn">
-       <div className="flex justify-between items-center mb-4 border-b border-gold/30 pb-2"><h3 className="text-gold text-xl flex items-center gap-2"><Clock size={18}/> History</h3></div>
+       <div className="flex justify-between items-center mb-4 border-b border-gold/30 pb-2">
+         <h3 className="text-gold text-xl flex items-center gap-2"><Clock size={18}/> History</h3>
+       </div>
        {loading ? <p className="text-gray-400">Loading...</p> : history.length === 0 ? <p className="text-gray-400 text-center mt-10">No history yet.</p> : (
-         <ul className="space-y-3">{history.map((h, i) => { 
-             const d = new Date(h.timestamp.endsWith('Z') ? h.timestamp : h.timestamp + 'Z');
-             return (<li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm"><span className="text-white flex items-center gap-2"><Calendar size={14} className="text-burgundy"/> {d.toLocaleDateString()}</span><span className="text-gold font-mono">{d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></li>)
-         })}</ul>
+         <ul className="space-y-3">
+           {history.map((h, i) => (
+             <li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm">
+               <span className="text-white flex items-center gap-2"><Calendar size={14} className="text-burgundy"/> {formatDate(h.timestamp)}</span>
+               <span className="text-gold font-mono">{formatTime(h.timestamp)}</span>
+             </li>
+           ))}
+         </ul>
        )}
     </div>
   );
@@ -150,31 +200,62 @@ const HistoryList = ({ cardId, onClose }) => {
 const PDFViewer = ({ url, title, bookId, onClose }) => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [progressText, setProgressText] = useState("");
+
   const handleExtract = async () => {
     if (!confirm("Extract all images from this book into a new card section?")) return;
-    setIsExtracting(true); setProgressText("Initializing...");
-    const intervals = [setTimeout(() => setProgressText("Scanning..."), 2000), setTimeout(() => setProgressText("Extracting..."), 5000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
+    setIsExtracting(true);
+    setProgressText("Initializing extraction...");
+
+    const intervals = [
+        setTimeout(() => setProgressText("Scanning PDF pages..."), 2000),
+        setTimeout(() => setProgressText("Extracting raw images..."), 5000),
+        setTimeout(() => setProgressText("Filtering small assets..."), 8000),
+        setTimeout(() => setProgressText("Creating cards..."), 12000),
+    ];
+
     try {
-        const res = await fetch(`${API_URL}/books/${bookId}/extract`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+        const res = await fetch(`${API_URL}/books/${bookId}/extract`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
         const data = await res.json();
         intervals.forEach(clearTimeout);
-        if (res.ok) { setProgressText("Done!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); }, 500); } 
-        else { alert(`Error: ${data.error}`); setIsExtracting(false); }
-    } catch { intervals.forEach(clearTimeout); alert("Failed."); setIsExtracting(false); }
+        if (res.ok) {
+            setProgressText("Extraction Complete!");
+            setTimeout(() => {
+                alert(`Success! ${data.message}. Check your Cards tab.`);
+                setIsExtracting(false);
+                setProgressText("");
+            }, 500);
+        } else {
+            alert(`Error: ${data.error}`);
+            setIsExtracting(false);
+            setProgressText("");
+        }
+    } catch (e) {
+        intervals.forEach(clearTimeout);
+        alert("Extraction failed. Check network or server.");
+        setIsExtracting(false);
+        setProgressText("");
+    }
   };
+
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
       <div className="flex justify-between items-center px-4 pb-4 pt-12 bg-gray-900 border-b border-gold/20 safe-top">
-        <div className="flex flex-col max-w-[60%]"><h3 className="text-gold text-xl truncate">{title}</h3>{isExtracting && <span className="text-xs text-gold/80 animate-pulse">{progressText}</span>}</div>
+        <div className="flex flex-col max-w-[60%]">
+            <h3 className="text-gold text-xl truncate">{title}</h3>
+            {isExtracting && <span className="text-xs text-gold/80 animate-pulse">{progressText}</span>}
+        </div>
         <div className="flex gap-4 items-center">
-            <button onClick={handleExtract} disabled={isExtracting} className={`p-2 rounded-full text-white shadow-lg ${isExtracting ? 'bg-gray-700' : 'bg-blue-600'}`}>{isExtracting ? <RefreshCw className="animate-spin" size={24}/> : <Scissors size={24}/>}</button>
+            <button onClick={handleExtract} disabled={isExtracting} className={`p-2 rounded-full text-white shadow-lg transition ${isExtracting ? 'bg-gray-700 cursor-wait' : 'bg-blue-600 hover:bg-blue-500'}`} title="Extract Images"><RefreshCw className={isExtracting ? "animate-spin" : ""} size={24}/></button>
             <button onClick={onClose} className="p-2 bg-burgundy rounded-full text-white hover:bg-lipstick shadow-lg"><X size={24}/></button>
         </div>
       </div>
       {isExtracting && <div className="w-full h-1 bg-gray-800"><div className="animate-progress-indeterminate w-full h-full"></div></div>}
       <div className="flex-1 w-full h-full bg-gray-800 flex items-center justify-center p-2 overflow-hidden relative">
         <object data={url} type="application/pdf" className="w-full h-full rounded-lg border border-gold/20">
-            <div className="text-white text-center flex flex-col items-center justify-center h-full gap-4"><p>Preview not supported.</p><a href={url} download className="bg-gold text-black font-bold py-2 px-6 rounded-full">Download PDF</a></div>
+            <div className="text-white text-center flex flex-col items-center justify-center h-full gap-4"><p>Preview not supported on this device.</p><a href={url} download className="bg-gold text-black font-bold py-2 px-6 rounded-full hover:bg-yellow-500 transition">Download PDF</a></div>
         </object>
       </div>
     </div>
@@ -182,33 +263,52 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
 };
 
 const SectionTab = ({ section, activeSection, setActiveSection, onLongPress }) => {
-    const longPressProps = useLongPress(() => { if (onLongPress) onLongPress(section); }, 800);
+    const longPressProps = useLongPress(() => {
+        if (onLongPress) onLongPress(section);
+    }, 800);
     const isActive = activeSection === section.id;
-    return ( <button {...longPressProps} onClick={() => setActiveSection(isActive ? null : section.id)} className={`px-4 py-2 rounded-full whitespace-nowrap transition border ${isActive ? 'bg-burgundy border-gold text-white shadow-lg transform scale-105 z-10' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-800'}`}>{section.title}</button> );
+    return (
+      <button {...longPressProps} onClick={() => setActiveSection(isActive ? null : section.id)} className={`px-4 py-2 rounded-full whitespace-nowrap transition border ${isActive ? 'bg-burgundy border-gold text-white shadow-lg transform scale-105 z-10' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-800'}`}>{section.title}</button>
+    );
 };
 
 const CardItem = ({ card, onDeleteRequest, onClick }) => {
     const longPressProps = useLongPress(() => onDeleteRequest(card.id), 800);
     const lastTap = useRef(0);
-    const handleDoubleTap = () => { const now = Date.now(); if (now - lastTap.current < 300 && now - lastTap.current > 0) { onClick(card); } lastTap.current = now; };
-    return ( <div {...longPressProps} onClick={handleDoubleTap} className="aspect-[3/4] bg-gradient-to-br from-gray-800 to-black rounded-lg border-2 border-gold/50 hover:border-lipstick cursor-pointer flex flex-col items-center justify-center relative overflow-hidden transition transform hover:scale-105 shadow-lg select-none"><div className="absolute inset-0 bg-pattern opacity-20"></div><Maximize2 className="text-gold mb-2" size={32} /><span className="text-gold font-caveat text-xl">Double Tap to Play</span></div> );
+    const handleDoubleTap = (e) => {
+      const now = Date.now();
+      if (now - lastTap.current < 300 && now - lastTap.current > 0) onClick(card);
+      lastTap.current = now;
+    };
+    return (
+      <div {...longPressProps} onClick={handleDoubleTap} className="aspect-[3/4] bg-gradient-to-br from-gray-800 to-black rounded-lg border-2 border-gold/50 hover:border-lipstick cursor-pointer flex flex-col items-center justify-center relative overflow-hidden transition transform hover:scale-105 shadow-lg select-none">
+        <div className="absolute inset-0 bg-pattern opacity-20"></div>
+        <Maximize2 className="text-gold mb-2" size={32} />
+        <span className="text-gold font-caveat text-xl">Double Tap to Play</span>
+      </div>
+    );
 };
 
 const LocationItem = ({ loc, onToggle, onDeleteRequest }) => {
     const longPressProps = useLongPress(() => onDeleteRequest(loc), 800);
+    const unlockedDate = loc.unlocked_at ? new Date(loc.unlocked_at).toLocaleDateString() : '';
     return (
         <div {...longPressProps} onClick={() => onToggle(loc.id)} className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer select-none ${loc.count > 0 ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}>
-            <div className="flex items-center gap-4"><span className={`text-lg font-caveat ${loc.count > 0 ? 'text-gold' : 'text-gray-400'}`}>{loc.name}</span>{loc.count > 0 && <span className="bg-gold text-black text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{loc.count}x</span>}</div>
-            {loc.count > 0 ? (<div className="text-right flex-shrink-0"><CheckCircle className="text-green-500 inline mb-1"/><div className="text-xs text-gray-500">{new Date(loc.unlocked_at).toLocaleDateString()}</div></div>) : (<div className="w-6 h-6 rounded-full border-2 border-gray-600 flex-shrink-0"></div>)}
+            <div className="flex items-center gap-4">
+                <span className={`text-lg font-caveat ${loc.count > 0 ? 'text-gold' : 'text-gray-400'}`}>{loc.name}</span>
+                {loc.count > 0 && <span className="bg-gold text-black text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{loc.count}x</span>}
+            </div>
+            {loc.count > 0 ? (<div className="text-right flex-shrink-0"><CheckCircle className="text-green-500 inline mb-1"/><div className="text-xs text-gray-500">{unlockedDate}</div></div>) : (<div className="w-6 h-6 rounded-full border-2 border-gray-600 flex-shrink-0"></div>)}
         </div>
     );
 };
 
 const HistoryItem = ({ item, onReturn, onDeleteRequest }) => {
     const longPressProps = useLongPress(() => onDeleteRequest(item), 800);
+    const dateStr = item.pulled_at ? new Date(item.pulled_at).toLocaleDateString() : '';
     return (
         <div {...longPressProps} className="bg-gray-900 p-4 rounded-lg border border-gray-800 flex justify-between items-center select-none">
-            <div><p className="text-gold font-caveat text-lg">{item.text}</p><p className="text-xs text-gray-500">{new Date(item.pulled_at).toLocaleDateString()}</p></div>
+            <div><p className="text-gold font-caveat text-lg">{item.text}</p><p className="text-xs text-gray-500">{dateStr}</p></div>
             <button onClick={() => onReturn(item.id)} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded text-white flex items-center gap-1"><RotateCw size={12}/> Return</button>
         </div>
     );
@@ -219,7 +319,7 @@ const BookItem = ({ book, onClick, onLongPress }) => {
     return ( <div {...longPressProps} onClick={() => onClick(book)} className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md group select-none"><Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/><div className="overflow-hidden"><h3 className="text-xl text-white truncate w-full">{book.title}</h3><p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p></div></div> );
 };
 
-// --- Main Page Components ---
+// --- Pages ---
 
 const Auth = ({ setUser }) => {
   const [isLogin, setIsLogin] = useState(true);
@@ -281,15 +381,15 @@ const Spin = () => {
         setIsSpinning(true); setWinner(null);
         
         const winningIndex = Math.floor(Math.random() * 16);
-        const winningCard = pool[Math.floor(Math.random() * pool.length)]; // Random card from pool assigned to winning index
+        const winningCard = pool[Math.floor(Math.random() * pool.length)]; 
         
         const segmentAngle = 360 / 16; 
         const offset = (winningIndex * segmentAngle) + (segmentAngle / 2);
         const target = 360 - offset; 
         let delta = target - (rotation % 360);
         if (delta < 0) delta += 360;
-        
-        setRotation(rotation + (5 * 360) + delta);
+        const totalRotation = rotation + (5 * 360) + delta;
+        setRotation(totalRotation);
 
         setTimeout(() => {
             setIsSpinning(false);
@@ -330,6 +430,12 @@ const DiceGame = () => {
             .catch(console.error);
     }, []);
 
+    const generateTime = () => {
+        const standard = [10, 15, 30, 45, 60];
+        const pool = [...standard, ...standard, ...standard, '∞']; 
+        return pool[Math.floor(Math.random() * pool.length)];
+    };
+
     const handleRoll = () => {
         if (rolling) return;
         setRolling(true); setTimerActive(false); setTimerPaused(false); setResult({ act: '?', loc: '?', time: '?' }); 
@@ -338,7 +444,7 @@ const DiceGame = () => {
             setResult({
                 act: acts.length ? acts[Math.floor(Math.random() * acts.length)].text : '?',
                 loc: locations.length ? locations[Math.floor(Math.random() * locations.length)].text : '?',
-                time: [10, 15, 30, 45, 60, 60, 60, '∞'][Math.floor(Math.random() * 8)] // Weighted infinity
+                time: [10, 15, 30, 45, 60, 60, 60, '∞'][Math.floor(Math.random() * 8)]
             });
             steps++;
             if (steps > 20) { clearInterval(interval); setRolling(false); }
@@ -378,7 +484,15 @@ const DiceGame = () => {
                     {(timerActive || timerPaused) ? <span className="text-red-500 font-mono text-3xl animate-pulse">{timeLeft}</span> : <span className="text-white font-bold text-xl">{result.time === '∞' ? '∞' : result.time + 's'}</span>}
                 </div>
             </div>
-            {(!rolling && result.act !== '?' && result.loc !== '?' && result.time !== '?') && (<div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn"><p className="text-white text-lg font-caveat"><span className="text-gold font-bold">{result.act}</span> {result.loc} {result.time !== '∞' ? ` for ${result.time} seconds` : ` until stopped`}</p></div>)}
+
+            {(!rolling && result.act !== '?' && result.loc !== '?' && result.time !== '?') && (
+                <div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn w-full">
+                    <p className="text-white text-3xl font-caveat font-bold leading-relaxed">
+                        <span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span> {result.time !== '∞' ? ` for ${result.time} seconds` : ` until stopped`}
+                    </p>
+                </div>
+            )}
+
             <div className="h-20 flex items-center justify-center w-full gap-6">{!rolling && result.time !== '?' && result.time !== '∞' && (<>{timerActive ? (<button onClick={pauseTimer} className="w-16 h-16 rounded-full bg-yellow-600 flex items-center justify-center shadow-lg"><Pause fill="white" size={32} /></button>) : (<button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>)}{(timerActive || timerPaused) && (<button onClick={stopTimer} className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg"><Square fill="white" size={28} /></button>)}</>)}</div>
             <button onClick={handleRoll} disabled={rolling || timerActive} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50">ROLL</button>
             <button onClick={() => setIsEditing(true)} className="text-gray-500 flex items-center gap-2 mt-4"><Edit2 size={16} /> Edit Dice</button>
@@ -386,16 +500,23 @@ const DiceGame = () => {
     );
 };
 
+// 6. Extras Tab (Locations + Jar)
 const LocationUnlocks = () => {
     const [locations, setLocations] = useState([]);
     const [newLoc, setNewLoc] = useState("");
     const [menuTarget, setMenuTarget] = useState(null);
-    const fetchLocs = () => { fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setLocations(data); }).catch(console.error); };
+
+    const fetchLocs = () => {
+        fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setLocations(data); }).catch(console.error);
+    };
+
     useEffect(() => { fetchLocs(); }, []);
+
     const toggleLoc = async (id) => { await fetch(`${API_URL}/locations/${id}/toggle`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ increment: true }) }); fetchLocs(); };
     const addLoc = async () => { if(!newLoc) return; const res = await fetch(`${API_URL}/locations`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ name: newLoc }) }); if(res.ok) { fetchLocs(); setNewLoc(""); } };
     const deleteLoc = async () => { if(!menuTarget) return; await fetch(`${API_URL}/locations/${menuTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
     const resetLoc = async () => { if(!menuTarget) return; await fetch(`${API_URL}/locations/${menuTarget.id}/reset`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
+
     return (
         <div>
             <h2 className="text-gold text-3xl mb-6 flex items-center gap-2"><MapPin/> Locations</h2>
@@ -411,16 +532,37 @@ const FantasyJar = () => {
     const [pulled, setPulled] = useState(null);
     const [history, setHistory] = useState([]);
     const [deleteTarget, setDeleteTarget] = useState(null);
-    const fetchHistory = () => { fetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setHistory(data); }).catch(console.error); };
+
+    const fetchHistory = () => {
+        fetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setHistory(data); }).catch(console.error);
+    };
+
     useEffect(() => { fetchHistory(); }, []);
+
     const handleDrop = async () => { if(!wish.trim()) return; await fetch(`${API_URL}/fantasies`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ text: wish }) }); setWish(""); alert("Wish dropped in the jar! 🤫"); };
     const handlePull = async () => { const res = await fetch(`${API_URL}/fantasies/pull`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); const data = await res.json(); if(data.empty) { alert("The jar is empty! Add more fantasies."); } else { setPulled(data.text); fetchHistory(); } };
     const handleReturn = async (id) => { await fetch(`${API_URL}/fantasies/${id}/return`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); fetchHistory(); };
     const handleDelete = async () => { if (!deleteTarget) return; await fetch(`${API_URL}/fantasies/${deleteTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setDeleteTarget(null); fetchHistory(); };
+
     return (
         <div className="flex flex-col items-center justify-center gap-8">
             <h2 className="text-gold text-3xl font-caveat">The Fantasy Jar</h2>
-            {pulled ? (<div className="bg-white/10 p-8 rounded-xl border-2 border-gold text-center animate-fadeIn w-full max-w-sm"><Sparkles className="text-gold mx-auto mb-4" size={40} /><p className="text-2xl text-white font-caveat">{pulled}</p><button onClick={() => setPulled(null)} className="mt-6 text-gray-400 text-sm underline">Put away</button></div>) : (<div onClick={handlePull} className="w-48 h-48 bg-white/5 border-4 border-gray-700 rounded-full flex items-center justify-center cursor-pointer hover:border-gold hover:shadow-[0_0_30px_#FFD700] transition group"><span className="text-gray-500 group-hover:text-gold font-bold text-xl">Tap to Pull</span></div>)}
+            
+            {pulled ? (
+                <div className="bg-white/10 p-8 rounded-xl border-2 border-gold text-center animate-fadeIn w-full max-w-sm">
+                    <Sparkles className="text-gold mx-auto mb-4" size={40} />
+                    <p className="text-2xl text-white font-caveat">{pulled}</p>
+                    <button onClick={() => setPulled(null)} className="mt-6 text-gray-400 text-sm underline">Put away</button>
+                </div>
+            ) : (
+                <div onClick={handlePull} className="relative w-40 h-56 cursor-pointer group">
+                    <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-32 h-6 bg-gold rounded-sm shadow-md z-20"></div>
+                    <div className="w-full h-full bg-white/10 border-4 border-gold rounded-b-[3rem] rounded-t-lg backdrop-blur-md flex items-center justify-center shadow-[0_0_30px_rgba(255,215,0,0.2)] group-hover:shadow-[0_0_50px_rgba(255,215,0,0.5)] transition-all">
+                        <span className="text-gray-300 group-hover:text-white font-caveat text-2xl rotate-[-10deg]">Tap to Pull</span>
+                    </div>
+                </div>
+            )}
+
             <div className="w-full max-w-sm mt-4"><textarea className="w-full bg-black border border-gray-700 rounded p-4 text-white mb-2 focus:border-burgundy outline-none" placeholder="Whisper a fantasy..." value={wish} onChange={e => setWish(e.target.value)} /><button onClick={handleDrop} className="w-full bg-burgundy text-white py-3 rounded font-bold hover:bg-red-800 transition">Drop in Jar</button></div>
             {history.length > 0 && (<div className="w-full max-w-sm mt-8"><h3 className="text-gray-500 text-sm uppercase tracking-widest mb-4">Pulled Memories</h3><div className="space-y-3">{history.map(item => (<HistoryItem key={item.id} item={item} onReturn={handleReturn} onDeleteRequest={setDeleteTarget} />))}</div></div>)}
             {deleteTarget && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Memory?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteTarget(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
