@@ -63,6 +63,7 @@ const useLongPress = (callback = () => {}, ms = 800) => {
     onMouseLeave: () => setStartLongPress(false),
     onTouchStart: () => setStartLongPress(true),
     onTouchEnd: () => setStartLongPress(false),
+    onTouchCancel: () => setStartLongPress(false) // Safety for scroll interaction
   };
 };
 
@@ -96,7 +97,7 @@ const playSound = (type) => {
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Components ---
+// --- Sub-Components (Defined OUTSIDE to prevent re-render crashes) ---
 
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
@@ -319,6 +320,96 @@ const SectionTab = ({ section, activeSection, setActiveSection, onLongPress }) =
     );
 };
 
+// Extracted Sub-Components to fix re-render crash
+const CardItem = ({ card, onDeleteRequest, onClick }) => {
+    const longPressProps = useLongPress(() => {
+      onDeleteRequest(card.id);
+    }, 800);
+
+    const lastTap = useRef(0);
+    const handleDoubleTap = (e) => {
+      const now = Date.now();
+      if (now - lastTap.current < 300 && now - lastTap.current > 0) {
+         onClick(card);
+      }
+      lastTap.current = now;
+    };
+
+    return (
+      <div 
+        {...longPressProps}
+        onClick={handleDoubleTap}
+        className="aspect-[3/4] bg-gradient-to-br from-gray-800 to-black rounded-lg border-2 border-gold/50 hover:border-lipstick cursor-pointer flex flex-col items-center justify-center relative overflow-hidden transition transform hover:scale-105 shadow-lg select-none"
+      >
+        <div className="absolute inset-0 bg-pattern opacity-20"></div>
+        <Maximize2 className="text-gold mb-2" size={32} />
+        <span className="text-gold font-caveat text-xl">Double Tap to Play</span>
+      </div>
+    );
+};
+
+const LocationItem = ({ loc, onToggle, onDeleteRequest }) => {
+    const longPressProps = useLongPress(() => onDeleteRequest(loc), 800);
+    return (
+        <div 
+            {...longPressProps}
+            onClick={() => onToggle(loc.id)}
+            className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer select-none ${loc.count > 0 ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}
+        >
+            <div className="flex items-center gap-4">
+                <span className={`text-lg font-caveat ${loc.count > 0 ? 'text-gold' : 'text-gray-400'}`}>{loc.name}</span>
+                {loc.count > 0 && <span className="bg-gold text-black text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{loc.count}x</span>}
+            </div>
+            {loc.count > 0 ? (
+                <div className="text-right flex-shrink-0">
+                    <CheckCircle className="text-green-500 inline mb-1"/>
+                    <div className="text-xs text-gray-500">{new Date(loc.unlocked_at).toLocaleDateString()}</div>
+                </div>
+            ) : (
+                <div className="w-6 h-6 rounded-full border-2 border-gray-600 flex-shrink-0"></div>
+            )}
+        </div>
+    );
+};
+
+const HistoryItem = ({ item, onReturn, onDeleteRequest }) => {
+    const longPressProps = useLongPress(() => onDeleteRequest(item), 800);
+    return (
+        <div 
+            {...longPressProps}
+            className="bg-gray-900 p-4 rounded-lg border border-gray-800 flex justify-between items-center select-none"
+        >
+            <div>
+                <p className="text-gold font-caveat text-lg">{item.text}</p>
+                <p className="text-xs text-gray-500">{new Date(item.pulled_at).toLocaleDateString()}</p>
+            </div>
+            <button onClick={() => onReturn(item.id)} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded text-white flex items-center gap-1" title="Put back in jar">
+                <RotateCw size={12}/> Return
+            </button>
+        </div>
+    );
+};
+
+const BookItem = ({ book, onClick, onLongPress }) => {
+    const longPressProps = useLongPress(() => {
+      onLongPress(book);
+    }, 800);
+
+    return (
+      <div 
+        {...longPressProps}
+        onClick={() => onClick(book)}
+        className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md group select-none"
+      >
+        <Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/>
+        <div className="overflow-hidden">
+          <h3 className="text-xl text-white truncate w-full">{book.title}</h3>
+          <p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p>
+        </div>
+      </div>
+    );
+};
+
 // --- Pages ---
 
 const Auth = ({ setUser }) => {
@@ -471,6 +562,7 @@ const Spin = () => {
 
             <div className="relative w-80 h-80 shrink-0">
                 <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
+
                 <div 
                     className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden"
                     style={{
@@ -487,7 +579,9 @@ const Spin = () => {
                                 transform: `rotate(${i * 22.5 + 11.25}deg)`, 
                             }}
                         >
-                            <span className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl">
+                            <span 
+                                className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl"
+                            >
                                 {i + 1}
                             </span>
                         </div>
@@ -747,35 +841,11 @@ const LocationUnlocks = () => {
         fetchLocs();
     };
 
-    const LocationItem = ({ loc }) => {
-        const longPressProps = useLongPress(() => setMenuTarget(loc), 800);
-        return (
-            <div 
-                {...longPressProps}
-                onClick={() => !menuTarget && toggleLoc(loc.id)}
-                className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer select-none ${loc.count > 0 ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}
-            >
-                <div className="flex items-center gap-4">
-                    <span className={`text-lg font-caveat ${loc.count > 0 ? 'text-gold' : 'text-gray-400'}`}>{loc.name}</span>
-                    {loc.count > 0 && <span className="bg-gold text-black text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{loc.count}x</span>}
-                </div>
-                {loc.count > 0 ? (
-                    <div className="text-right flex-shrink-0">
-                        <CheckCircle className="text-green-500 inline mb-1"/>
-                        <div className="text-xs text-gray-500">{new Date(loc.unlocked_at).toLocaleDateString()}</div>
-                    </div>
-                ) : (
-                    <div className="w-6 h-6 rounded-full border-2 border-gray-600 flex-shrink-0"></div>
-                )}
-            </div>
-        );
-    };
-
     return (
         <div>
             <h2 className="text-gold text-3xl mb-6 flex items-center gap-2"><MapPin/> Locations</h2>
             <div className="grid grid-cols-1 gap-3 mb-6">
-                {locations.map(loc => <LocationItem key={loc.id} loc={loc} />)}
+                {locations.map(loc => <LocationItem key={loc.id} loc={loc} onToggle={toggleLoc} onDeleteRequest={setMenuTarget} />)}
             </div>
             <div className="flex gap-2">
                 <input className="flex-1 bg-black border border-gray-600 rounded p-3 text-white" placeholder="Add custom location..." value={newLoc} onChange={e => setNewLoc(e.target.value)} />
@@ -858,24 +928,6 @@ const FantasyJar = () => {
         fetchHistory();
     };
 
-    const HistoryItem = ({ item }) => {
-        const longPressProps = useLongPress(() => setDeleteTarget(item), 800);
-        return (
-            <div 
-                {...longPressProps}
-                className="bg-gray-900 p-4 rounded-lg border border-gray-800 flex justify-between items-center select-none"
-            >
-                <div>
-                    <p className="text-gold font-caveat text-lg">{item.text}</p>
-                    <p className="text-xs text-gray-500">{new Date(item.pulled_at).toLocaleDateString()}</p>
-                </div>
-                <button onClick={() => handleReturn(item.id)} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded text-white flex items-center gap-1" title="Put back in jar">
-                    <RotateCw size={12}/> Return
-                </button>
-            </div>
-        );
-    };
-
     return (
         <div className="flex flex-col items-center justify-center gap-8">
             <h2 className="text-gold text-3xl font-caveat">The Fantasy Jar</h2>
@@ -903,7 +955,7 @@ const FantasyJar = () => {
                     <h3 className="text-gray-500 text-sm uppercase tracking-widest mb-4">Pulled Memories</h3>
                     <div className="space-y-3">
                         {history.map(item => (
-                            <HistoryItem key={item.id} item={item} />
+                            <HistoryItem key={item.id} item={item} onReturn={handleReturn} onDeleteRequest={setDeleteTarget} />
                         ))}
                     </div>
                 </div>
@@ -922,6 +974,16 @@ const FantasyJar = () => {
                     </div>
                 </div>
             )}
+        </div>
+    );
+};
+
+const Extras = () => {
+    return (
+        <div className="p-4 pb-24 space-y-12">
+            <LocationUnlocks />
+            <div className="border-t border-gray-800"></div>
+            <FantasyJar />
         </div>
     );
 };
@@ -1047,33 +1109,6 @@ const Home = () => {
     setCards([...cards].sort(() => Math.random() - 0.5));
   };
 
-  const CardItem = ({ card }) => {
-    const longPressProps = useLongPress(() => {
-      setDeleteId(card.id);
-    }, 800);
-
-    const lastTap = useRef(0);
-    const handleDoubleTap = () => {
-      const now = Date.now();
-      if (now - lastTap.current < 300 && now - lastTap.current > 0) {
-         if (!deleteId) setSelectedCard(card);
-      }
-      lastTap.current = now;
-    };
-
-    return (
-      <div 
-        {...longPressProps}
-        onClick={handleDoubleTap}
-        className="aspect-[3/4] bg-gradient-to-br from-gray-800 to-black rounded-lg border-2 border-gold/50 hover:border-lipstick cursor-pointer flex flex-col items-center justify-center relative overflow-hidden transition transform hover:scale-105 shadow-lg select-none"
-      >
-        <div className="absolute inset-0 bg-pattern opacity-20"></div>
-        <Maximize2 className="text-gold mb-2" size={32} />
-        <span className="text-gold font-caveat text-xl">Double Tap to Play</span>
-      </div>
-    );
-  };
-
   const filteredCards = cards.filter(c => {
     if (activeSection === null) return c.section_id == null; 
     return c.section_id === activeSection;
@@ -1126,7 +1161,7 @@ const Home = () => {
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fadeIn">
           {filteredCards.map(card => (
-            <CardItem key={card.id} card={card} />
+            <CardItem key={card.id} card={card} onDeleteRequest={setDeleteId} onClick={setSelectedCard} />
           ))}
         </div>
       )}
