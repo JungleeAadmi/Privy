@@ -407,6 +407,13 @@ const Spin = () => {
         fetchData();
     }, []);
 
+    // Prepare Wheel Gradient Style outside JSX
+    const wheelGradient = `conic-gradient(
+        ${Array.from({length: 16}).map((_, i) => 
+          `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`
+        ).join(', ')}
+    )`;
+
     const handleSpin = () => {
         if (isSpinning) return;
 
@@ -464,17 +471,12 @@ const Spin = () => {
 
             <div className="relative w-80 h-80 shrink-0">
                 <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
-
                 <div 
                     className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden"
                     style={{
                         transform: `rotate(${rotation}deg)`,
                         transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)',
-                        background: `conic-gradient(
-                          ${Array.from({length: 16}).map((_, i) => 
-                            `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`
-                          ).join(', ')}
-                        )`
+                        background: wheelGradient
                     }}
                 >
                     {Array.from({length: 16}).map((_, i) => (
@@ -485,9 +487,7 @@ const Spin = () => {
                                 transform: `rotate(${i * 22.5 + 11.25}deg)`, 
                             }}
                         >
-                            <span 
-                                className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl"
-                            >
+                            <span className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl">
                                 {i + 1}
                             </span>
                         </div>
@@ -650,10 +650,16 @@ const DiceGame = () => {
                 <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(128,0,32,0.8)]"><span className="text-white font-bold text-sm leading-tight">{result.act}</span></div>
                 <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(48,25,52,0.8)]"><span className="text-white font-bold text-sm leading-tight">{result.loc}</span></div>
                 <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(255,215,0,0.3)]">
-                    {timerActive || timerPaused ? <span className="text-red-500 font-mono text-3xl animate-pulse">{timeLeft}</span> : <span className="text-white font-bold text-xl">{result.time === '∞' ? '∞' : result.time + 's'}</span>}
+                    {/* Fixed overlapping: Use explicit condition rendering */}
+                    {(timerActive || timerPaused) ? (
+                        <span className="text-red-500 font-mono text-3xl animate-pulse">{timeLeft}</span>
+                    ) : (
+                        <span className="text-white font-bold text-xl">{result.time === '∞' ? '∞' : result.time + 's'}</span>
+                    )}
                 </div>
             </div>
 
+            {/* Sentence Generation Display */}
             {(!rolling && result.act !== '?' && result.loc !== '?' && result.time !== '?') && (
                 <div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn">
                     <p className="text-white text-lg font-caveat">
@@ -671,6 +677,7 @@ const DiceGame = () => {
                        ) : (
                            <button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>
                        )}
+                       
                        {(timerActive || timerPaused) && (
                            <button onClick={stopTimer} className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg"><Square fill="white" size={28} /></button>
                        )}
