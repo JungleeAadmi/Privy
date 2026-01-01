@@ -132,37 +132,65 @@ const HistoryList = ({ cardId, onClose }) => {
 // 3. PDF Viewer Modal
 const PDFViewer = ({ url, title, bookId, onClose }) => {
   const [isExtracting, setIsExtracting] = useState(false);
+  const [progressText, setProgressText] = useState("");
 
   const handleExtract = async () => {
-    if (!confirm("Extract all images from this book into a new card section? This might take a moment.")) return;
+    if (!confirm("Extract all images from this book into a new card section?")) return;
     
     setIsExtracting(true);
+    setProgressText("Initializing extraction...");
+
+    // Simulate progress updates for user feedback
+    const intervals = [
+        setTimeout(() => setProgressText("Scanning PDF pages..."), 2000),
+        setTimeout(() => setProgressText("Extracting raw images..."), 5000),
+        setTimeout(() => setProgressText("Filtering small assets..."), 8000),
+        setTimeout(() => setProgressText("Creating cards..."), 12000),
+    ];
+
     try {
         const res = await fetch(`${API_URL}/books/${bookId}/extract`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         });
         const data = await res.json();
+        
+        intervals.forEach(clearTimeout);
+
         if (res.ok) {
-            alert(`Success! ${data.message}. Check your Cards tab.`);
+            setProgressText("Extraction Complete!");
+            setTimeout(() => {
+                alert(`Success! ${data.message}. Check your Cards tab.`);
+                setIsExtracting(false);
+                setProgressText("");
+            }, 500);
         } else {
             alert(`Error: ${data.error}`);
+            setIsExtracting(false);
+            setProgressText("");
         }
     } catch (e) {
+        intervals.forEach(clearTimeout);
         alert("Extraction failed. Check network or server.");
+        setIsExtracting(false);
+        setProgressText("");
     }
-    setIsExtracting(false);
   };
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
       <div className="flex justify-between items-center px-4 pb-4 pt-12 bg-gray-900 border-b border-gold/20 safe-top">
-        <h3 className="text-gold text-xl truncate pr-4 max-w-[60%]">{title}</h3>
-        <div className="flex gap-4">
+        <div className="flex flex-col max-w-[60%]">
+            <h3 className="text-gold text-xl truncate">{title}</h3>
+            {isExtracting && (
+                <span className="text-xs text-gold/80 animate-pulse">{progressText}</span>
+            )}
+        </div>
+        <div className="flex gap-4 items-center">
             <button 
                 onClick={handleExtract} 
                 disabled={isExtracting}
-                className={`p-2 rounded-full text-white shadow-lg ${isExtracting ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'}`}
+                className={`p-2 rounded-full text-white shadow-lg transition ${isExtracting ? 'bg-gray-700 cursor-wait' : 'bg-blue-600 hover:bg-blue-500'}`}
                 title="Extract Images to Cards"
             >
                 {isExtracting ? <RefreshCw className="animate-spin" size={24} /> : <Scissors size={24} />}
@@ -172,7 +200,15 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
             </button>
         </div>
       </div>
-      <div className="flex-1 w-full h-full bg-gray-800 flex items-center justify-center p-2 overflow-hidden">
+      
+      {/* Progress Bar */}
+      {isExtracting && (
+        <div className="w-full h-1 bg-gray-800">
+            <div className="animate-progress-indeterminate w-full h-full"></div>
+        </div>
+      )}
+
+      <div className="flex-1 w-full h-full bg-gray-800 flex items-center justify-center p-2 overflow-hidden relative">
         <object 
           data={url} 
           type="application/pdf" 
