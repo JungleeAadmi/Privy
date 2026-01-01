@@ -88,10 +88,7 @@ db.serialize(() => {
         count INTEGER DEFAULT 0
     )`);
     
-    // Migration: Add count column if missing
-    db.run(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`, (err) => {
-        // Ignore error if exists
-    });
+    db.run(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`, (err) => {});
 
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -277,7 +274,7 @@ app.post('/api/settings/test', auth, (req, res) => {
     })
     .then(response => {
         if (response.ok) res.json({ success: true });
-        else res.status(500).json({ error: `Ntfy Error: ${response.status} ${response.statusText}` });
+        else res.status(500).json({ error: `Ntfy Error: ${response.status}` });
     })
     .catch(err => res.status(500).json({ error: err.message }));
 });
@@ -370,10 +367,7 @@ app.post('/api/cards/:id/scratch', auth, (req, res) => {
         db.run(`INSERT INTO card_history (card_id) VALUES (?)`, [cardId]);
         db.run(`UPDATE cards SET scratched_count = scratched_count + 1 WHERE id = ?`, [cardId], (err) => {
             if (err) return res.status(500).json({ error: err.message });
-            
-            // Trigger Notification
             sendNtfy(cardId);
-            
             res.json({ success: true });
         });
     });
@@ -437,7 +431,6 @@ app.delete('/api/books/:id', auth, (req, res) => {
     });
 });
 
-// --- Route: Extract Images from PDF ---
 app.post('/api/books/:id/extract', auth, (req, res) => {
     const bookId = req.params.id;
     req.setTimeout(1200000); // 20 min timeout for large PDFs
@@ -543,6 +536,13 @@ app.post('/api/locations/:id/toggle', auth, (req, res) => {
     });
 });
 
+app.post('/api/locations/:id/reset', auth, (req, res) => {
+    db.run(`UPDATE location_unlocks SET count = 0, unlocked_at = NULL WHERE id = ?`, [req.params.id], (err) => {
+        if(err) return res.status(500).json({error: err.message});
+        res.json({success: true});
+    });
+});
+
 app.post('/api/locations', auth, (req, res) => {
     const { name } = req.body;
     db.run(`INSERT INTO location_unlocks (name, count) VALUES (?, 0)`, [name], function(err) {
@@ -593,6 +593,13 @@ app.post('/api/fantasies/pull', auth, (req, res) => {
 
 app.post('/api/fantasies/:id/return', auth, (req, res) => {
     db.run(`UPDATE fantasies SET pulled_at = NULL WHERE id = ?`, [req.params.id], (err) => {
+        if(err) return res.status(500).json({error: err.message});
+        res.json({success: true});
+    });
+});
+
+app.delete('/api/fantasies/:id', auth, (req, res) => {
+    db.run(`DELETE FROM fantasies WHERE id = ?`, [req.params.id], (err) => {
         if(err) return res.status(500).json({error: err.message});
         res.json({success: true});
     });

@@ -29,35 +29,39 @@ const useLongPress = (callback = () => {}, ms = 800) => {
 
 // --- Helper Functions ---
 const playSound = (type) => {
-    try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContext) return;
-        const ctx = new AudioContext();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        
-        if (type === 'ting') {
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
-            gain.gain.setValueAtTime(0.5, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.5);
-        } else if (type === 'end') {
-            playSound('ting');
-            setTimeout(() => playSound('ting'), 200);
-        }
-    } catch (e) {
-        console.warn("Audio play failed", e);
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    
+    // Ensure context is running (fixes issues where audio is suspended by default)
+    if (ctx.state === 'suspended') {
+        ctx.resume();
+    }
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    if (type === 'ting') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
+        gain.gain.setValueAtTime(0.5, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.5);
+    } else if (type === 'end') {
+        // Double ting
+        playSound('ting');
+        setTimeout(() => playSound('ting'), 200);
     }
 };
 
-// --- Shared Components ---
+// --- Components ---
 
+// 1. Triple Tap Reveal Card
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
@@ -109,20 +113,19 @@ const RevealCard = ({ image, id, onRevealComplete }) => {
   );
 };
 
+// 2. History List Component
 const HistoryList = ({ cardId, onClose }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchHistory = async () => {
-      try {
-        const res = await fetch(`${API_URL}/cards/${cardId}/history`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        });
-        if (res.ok) {
-          setHistory(await res.json());
-        }
-      } catch (e) { console.error(e); }
+      const res = await fetch(`${API_URL}/cards/${cardId}/history`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        setHistory(await res.json());
+      }
       setLoading(false);
     };
     fetchHistory();
@@ -158,6 +161,7 @@ const HistoryList = ({ cardId, onClose }) => {
   );
 };
 
+// 3. PDF Viewer Modal
 const PDFViewer = ({ url, title, bookId, onClose }) => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [progressText, setProgressText] = useState("");
@@ -256,6 +260,7 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   );
 };
 
+// 4. Section Tab Component
 const SectionTab = ({ section, activeSection, setActiveSection, onLongPress }) => {
     const longPressProps = useLongPress(() => {
         if (onLongPress) onLongPress(section);
@@ -286,25 +291,21 @@ const Auth = ({ setUser }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      const endpoint = isLogin ? '/login' : '/register';
-      const res = await fetch(`${API_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
-      });
-      const data = await res.json();
-      if (data.token) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        setUser(data.user);
-      } else if (data.success) {
-        setIsLogin(true); 
-      } else {
-        alert(data.error);
-      }
-    } catch (e) {
-      alert("Connection error");
+    const endpoint = isLogin ? '/login' : '/register';
+    const res = await fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form)
+    });
+    const data = await res.json();
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      setUser(data.user);
+    } else if (data.success) {
+      setIsLogin(true); 
+    } else {
+      alert(data.error);
     }
   };
 
@@ -339,159 +340,7 @@ const Auth = ({ setUser }) => {
   );
 };
 
-const Spin = () => {
-    const [cards, setCards] = useState([]);
-    const [sections, setSections] = useState([]);
-    const [activeSection, setActiveSection] = useState(null);
-    const [rotation, setRotation] = useState(0);
-    const [isSpinning, setIsSpinning] = useState(false);
-    const [winner, setWinner] = useState(null); 
-    const [showHistory, setShowHistory] = useState(false);
-
-    useEffect(() => {
-        const fetchData = async () => {
-            const token = localStorage.getItem('token');
-            const headers = { Authorization: `Bearer ${token}` };
-            try {
-                const [cardsRes, sectionsRes] = await Promise.all([
-                    fetch(`${API_URL}/cards`, { headers }),
-                    fetch(`${API_URL}/sections`, { headers })
-                ]);
-                if (cardsRes.ok && sectionsRes.ok) {
-                    setCards(await cardsRes.json());
-                    setSections(await sectionsRes.json());
-                }
-            } catch (e) { console.error(e); }
-        };
-        fetchData();
-    }, []);
-
-    // Prepare Wheel Gradient Style outside JSX
-    const wheelGradient = `conic-gradient(
-        ${Array.from({length: 16}).map((_, i) => 
-          `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`
-        ).join(', ')}
-    )`;
-
-    const handleSpin = () => {
-        if (isSpinning) return;
-
-        const pool = cards.filter(c => {
-            if (activeSection === null) return c.section_id == null; 
-            return c.section_id === activeSection;
-        });
-
-        if (pool.length === 0) {
-            alert("No cards in this section to spin!");
-            return;
-        }
-
-        setIsSpinning(true);
-        setWinner(null);
-
-        const SEGMENT_COUNT = 16;
-        const slots = Array.from({length: SEGMENT_COUNT}, () => pool[Math.floor(Math.random() * pool.length)]);
-        const winningIndex = Math.floor(Math.random() * SEGMENT_COUNT);
-        const winningCard = slots[winningIndex];
-
-        const segmentAngle = 360 / SEGMENT_COUNT; 
-        const offsetToCenter = (winningIndex * segmentAngle) + (segmentAngle / 2);
-        const targetAngle = 360 - offsetToCenter; 
-        
-        let delta = targetAngle - (rotation % 360);
-        if (delta < 0) delta += 360;
-        
-        const totalRotation = rotation + (5 * 360) + delta;
-        setRotation(totalRotation);
-
-        setTimeout(() => {
-            setIsSpinning(false);
-            setWinner(winningCard);
-            fetch(`${API_URL}/cards/${winningCard.id}/scratch`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-            });
-        }, 4000);
-    };
-
-    return (
-        <div className="flex flex-col items-center w-full min-h-full py-4">
-            <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">
-                {sections.map(s => (
-                    <SectionTab 
-                        key={s.id} 
-                        section={s} 
-                        activeSection={activeSection} 
-                        setActiveSection={setActiveSection} 
-                        onLongPress={null} 
-                    />
-                ))}
-            </div>
-
-            <div className="relative w-80 h-80 shrink-0">
-                <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
-                <div 
-                    className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden"
-                    style={{
-                        transform: `rotate(${rotation}deg)`,
-                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)',
-                        background: wheelGradient
-                    }}
-                >
-                    {Array.from({length: 16}).map((_, i) => (
-                        <div 
-                            key={i}
-                            className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom"
-                            style={{
-                                transform: `rotate(${i * 22.5 + 11.25}deg)`, 
-                            }}
-                        >
-                            <span className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl">
-                                {i + 1}
-                            </span>
-                        </div>
-                    ))}
-                </div>
-
-                <button 
-                    onClick={handleSpin}
-                    disabled={isSpinning}
-                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-gold border-4 border-burgundy shadow-[0_0_20px_#FFD700] flex items-center justify-center z-10 active:scale-95 transition disabled:opacity-50 disabled:scale-100"
-                >
-                    <span className="text-burgundy font-black text-xl font-sans tracking-widest">SPIN</span>
-                </button>
-            </div>
-
-            {winner && (
-                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-                    <div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black">
-                        <button onClick={() => setWinner(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button>
-                        
-                        <div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center"> 
-                            {showHistory ? (
-                                <HistoryList cardId={winner.id} onClose={() => setShowHistory(false)}/>
-                            ) : (
-                                <img src={winner.filepath} alt="Winner" className="max-w-full max-h-full object-contain" />
-                            )}
-                        </div>
-
-                        <div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4">
-                            <h3 className="text-gold text-2xl font-caveat mb-2">The Wheel has Spoken!</h3>
-                            <button 
-                                onClick={() => setShowHistory(!showHistory)}
-                                className="flex items-center gap-2 text-white/50 text-sm hover:text-white transition"
-                            >
-                                <Heart size={16} className="fill-lipstick text-lipstick"/> 
-                                <span>Revealed {winner.scratched_count + 1} times</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
+// 5. Dice Game
 const DiceGame = () => {
     const [acts, setActs] = useState([]);
     const [locations, setLocations] = useState([]);
@@ -606,9 +455,24 @@ const DiceGame = () => {
                 <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(128,0,32,0.8)]"><span className="text-white font-bold text-sm leading-tight">{result.act}</span></div>
                 <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(48,25,52,0.8)]"><span className="text-white font-bold text-sm leading-tight">{result.loc}</span></div>
                 <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(255,215,0,0.3)]">
-                    {timerActive || timerPaused ? <span className="text-red-500 font-mono text-3xl animate-pulse">{timeLeft}</span> : <span className="text-white font-bold text-xl">{result.time === '∞' ? '∞' : result.time + 's'}</span>}
+                    {/* Fixed overlapping: Use explicit condition rendering */}
+                    {(timerActive || timerPaused) ? (
+                        <span className="text-red-500 font-mono text-3xl animate-pulse">{timeLeft}</span>
+                    ) : (
+                        <span className="text-white font-bold text-xl">{result.time === '∞' ? '∞' : result.time + 's'}</span>
+                    )}
                 </div>
             </div>
+
+            {/* Sentence Generation Display */}
+            {(!rolling && result.act !== '?' && result.loc !== '?' && result.time !== '?') && (
+                <div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn">
+                    <p className="text-white text-lg font-caveat">
+                        <span className="text-gold font-bold">{result.act}</span> {result.loc} 
+                        {result.time !== '∞' ? ` for ${result.time} seconds` : ` until stopped`}
+                    </p>
+                </div>
+            )}
 
             <div className="h-20 flex items-center justify-center w-full gap-6">
                 {!rolling && result.time !== '?' && result.time !== '∞' && (
@@ -636,7 +500,7 @@ const DiceGame = () => {
 const LocationUnlocks = () => {
     const [locations, setLocations] = useState([]);
     const [newLoc, setNewLoc] = useState("");
-    const [deleteId, setDeleteId] = useState(null);
+    const [menuTarget, setMenuTarget] = useState(null);
 
     const fetchLocs = () => {
         fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(setLocations);
@@ -664,21 +528,31 @@ const LocationUnlocks = () => {
     };
 
     const deleteLoc = async () => {
-        if(!deleteId) return;
-        await fetch(`${API_URL}/locations/${deleteId}`, {
+        if(!menuTarget) return;
+        await fetch(`${API_URL}/locations/${menuTarget.id}`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         });
-        setDeleteId(null);
+        setMenuTarget(null);
+        fetchLocs();
+    };
+
+    const resetLoc = async () => {
+        if(!menuTarget) return;
+        await fetch(`${API_URL}/locations/${menuTarget.id}/reset`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        setMenuTarget(null);
         fetchLocs();
     };
 
     const LocationItem = ({ loc }) => {
-        const longPressProps = useLongPress(() => setDeleteId(loc.id), 800);
+        const longPressProps = useLongPress(() => setMenuTarget(loc), 800);
         return (
             <div 
                 {...longPressProps}
-                onClick={() => !deleteId && toggleLoc(loc.id)}
+                onClick={() => !menuTarget && toggleLoc(loc.id)}
                 className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer select-none ${loc.count > 0 ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}
             >
                 <div className="flex items-center gap-4">
@@ -707,14 +581,16 @@ const LocationUnlocks = () => {
                 <input className="flex-1 bg-black border border-gray-600 rounded p-3 text-white" placeholder="Add custom location..." value={newLoc} onChange={e => setNewLoc(e.target.value)} />
                 <button onClick={addLoc} className="bg-gray-800 text-gold p-3 rounded hover:bg-gray-700"><Plus/></button>
             </div>
-            {deleteId && (
+            
+            {/* Location Options Modal */}
+            {menuTarget && (
                 <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
                     <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center">
-                        <Trash2 size={40} className="mx-auto text-lipstick mb-4" />
-                        <h3 className="text-white text-xl mb-4">Delete Location?</h3>
-                        <div className="flex justify-center gap-4">
-                            <button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button>
-                            <button onClick={deleteLoc} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button>
+                        <h3 className="text-white text-xl mb-4 truncate">{menuTarget.name}</h3>
+                        <div className="flex flex-col gap-3">
+                            <button onClick={resetLoc} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-gold w-full"><RotateCcw size={18}/> Reset Count</button>
+                            <button onClick={deleteLoc} className="flex items-center justify-center gap-2 p-3 rounded bg-red-900/50 hover:bg-red-900 text-white w-full"><Trash2 size={18}/> Delete</button>
+                            <button onClick={() => setMenuTarget(null)} className="p-2 mt-2 rounded text-gray-400 hover:text-white text-sm">Cancel</button>
                         </div>
                     </div>
                 </div>
@@ -727,6 +603,7 @@ const FantasyJar = () => {
     const [wish, setWish] = useState("");
     const [pulled, setPulled] = useState(null);
     const [history, setHistory] = useState([]);
+    const [deleteTarget, setDeleteTarget] = useState(null);
 
     const fetchHistory = () => {
         fetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
@@ -769,6 +646,34 @@ const FantasyJar = () => {
         fetchHistory();
     };
 
+    const handleDelete = async () => {
+        if (!deleteTarget) return;
+        await fetch(`${API_URL}/fantasies/${deleteTarget.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        setDeleteTarget(null);
+        fetchHistory();
+    };
+
+    const HistoryItem = ({ item }) => {
+        const longPressProps = useLongPress(() => setDeleteTarget(item), 800);
+        return (
+            <div 
+                {...longPressProps}
+                className="bg-gray-900 p-4 rounded-lg border border-gray-800 flex justify-between items-center select-none"
+            >
+                <div>
+                    <p className="text-gold font-caveat text-lg">{item.text}</p>
+                    <p className="text-xs text-gray-500">{new Date(item.pulled_at).toLocaleDateString()}</p>
+                </div>
+                <button onClick={() => handleReturn(item.id)} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded text-white flex items-center gap-1" title="Put back in jar">
+                    <RotateCw size={12}/> Return
+                </button>
+            </div>
+        );
+    };
+
     return (
         <div className="flex flex-col items-center justify-center gap-8">
             <h2 className="text-gold text-3xl font-caveat">The Fantasy Jar</h2>
@@ -796,16 +701,22 @@ const FantasyJar = () => {
                     <h3 className="text-gray-500 text-sm uppercase tracking-widest mb-4">Pulled Memories</h3>
                     <div className="space-y-3">
                         {history.map(item => (
-                            <div key={item.id} className="bg-gray-900 p-4 rounded-lg border border-gray-800 flex justify-between items-center">
-                                <div>
-                                    <p className="text-gold font-caveat text-lg">{item.text}</p>
-                                    <p className="text-xs text-gray-500">{new Date(item.pulled_at).toLocaleDateString()}</p>
-                                </div>
-                                <button onClick={() => handleReturn(item.id)} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded text-white flex items-center gap-1" title="Put back in jar">
-                                    <RotateCw size={12}/> Return
-                                </button>
-                            </div>
+                            <HistoryItem key={item.id} item={item} />
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Fantasy Delete Modal */}
+            {deleteTarget && (
+                <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+                    <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center">
+                        <Trash2 size={40} className="mx-auto text-lipstick mb-4" />
+                        <h3 className="text-white text-xl mb-4">Delete Memory?</h3>
+                        <div className="flex justify-center gap-4">
+                            <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button>
+                            <button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -1130,147 +1041,162 @@ const Home = () => {
   );
 };
 
-const Books = () => {
-  const [books, setBooks] = useState([]);
-  const [selectedBook, setSelectedBook] = useState(null);
-  const [menuTarget, setMenuTarget] = useState(null);
-  const [renameText, setRenameText] = useState("");
-  const [isRenaming, setIsRenaming] = useState(false);
+const Spin = () => {
+    const [cards, setCards] = useState([]);
+    const [sections, setSections] = useState([]);
+    const [activeSection, setActiveSection] = useState(null);
+    const [rotation, setRotation] = useState(0);
+    const [isSpinning, setIsSpinning] = useState(false);
+    const [winner, setWinner] = useState(null); 
+    const [showHistory, setShowHistory] = useState(false);
 
-  const loadBooks = async () => {
-    try {
-      const res = await fetch(`${API_URL}/books`, {
-         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      if (res.ok) setBooks(await res.json());
-    } catch(e) { console.error(e); }
-  };
+    useEffect(() => {
+        const fetchData = async () => {
+            const token = localStorage.getItem('token');
+            const headers = { Authorization: `Bearer ${token}` };
+            try {
+                const [cardsRes, sectionsRes] = await Promise.all([
+                    fetch(`${API_URL}/cards`, { headers }),
+                    fetch(`${API_URL}/sections`, { headers })
+                ]);
+                if (cardsRes.ok && sectionsRes.ok) {
+                    setCards(await cardsRes.json());
+                    setSections(await sectionsRes.json());
+                }
+            } catch (e) { console.error(e); }
+        };
+        fetchData();
+    }, []);
 
-  useEffect(() => {
-    loadBooks();
-    const interval = setInterval(loadBooks, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    const handleSpin = () => {
+        if (isSpinning) return;
 
-  const handleUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
-    for(const file of files) {
-        const formData = new FormData();
-        formData.append('file', file);
-        await fetch(`${API_URL}/books`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-          body: formData
+        const pool = cards.filter(c => {
+            if (activeSection === null) return c.section_id == null; 
+            return c.section_id === activeSection;
         });
-    }
-    loadBooks();
-  };
 
-  const handleRename = async () => {
-    if (!menuTarget || !renameText.trim()) return;
-    await fetch(`${API_URL}/books/${menuTarget.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
-      body: JSON.stringify({ title: renameText })
-    });
-    setMenuTarget(null);
-    setIsRenaming(false);
-    loadBooks();
-  };
+        if (pool.length === 0) {
+            alert("No cards in this section to spin!");
+            return;
+        }
 
-  const handleDelete = async () => {
-    if (!menuTarget) return;
-    await fetch(`${API_URL}/books/${menuTarget.id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    });
-    setMenuTarget(null);
-    loadBooks();
-  };
+        setIsSpinning(true);
+        setWinner(null);
 
-  const BookItem = ({ book }) => {
-    const longPressProps = useLongPress(() => {
-      setMenuTarget(book);
-      setRenameText(book.title);
-      setIsRenaming(false);
-    }, 800);
+        const SEGMENT_COUNT = 16;
+        const slots = Array.from({length: SEGMENT_COUNT}, () => pool[Math.floor(Math.random() * pool.length)]);
+        const winningIndex = Math.floor(Math.random() * SEGMENT_COUNT);
+        const winningCard = slots[winningIndex];
+
+        const segmentAngle = 360 / SEGMENT_COUNT; 
+        
+        const offsetToCenter = (winningIndex * segmentAngle) + (segmentAngle / 2);
+        const targetAngle = 360 - offsetToCenter; 
+        
+        let delta = targetAngle - (rotation % 360);
+        if (delta < 0) delta += 360;
+        
+        const totalRotation = rotation + (5 * 360) + delta;
+        
+        setRotation(totalRotation);
+
+        setTimeout(() => {
+            setIsSpinning(false);
+            setWinner(winningCard);
+            
+            fetch(`${API_URL}/cards/${winningCard.id}/scratch`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
+        }, 4000);
+    };
 
     return (
-      <div 
-        {...longPressProps}
-        onClick={() => !menuTarget && setSelectedBook(book)}
-        className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md group select-none"
-      >
-        <Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/>
-        <div className="overflow-hidden">
-          <h3 className="text-xl text-white truncate w-full">{book.title}</h3>
-          <p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p>
-        </div>
-      </div>
-    );
-  };
+        <div className="flex flex-col items-center w-full min-h-full py-4">
+            {/* Sections Bar */}
+            <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">
+                {sections.map(s => (
+                    <SectionTab 
+                        key={s.id} 
+                        section={s} 
+                        activeSection={activeSection} 
+                        setActiveSection={setActiveSection} 
+                        onLongPress={null} 
+                    />
+                ))}
+            </div>
 
-  return (
-    <div className="p-6 pb-24 pt-4">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl text-gold">Library</h2>
-        <label className="flex items-center gap-2 bg-burgundy px-4 py-2 rounded-full cursor-pointer hover:bg-lipstick">
-          <Upload size={18} className="text-white"/>
-          <span className="text-white text-sm">Add Books (PDF)</span>
-          <input type="file" className="hidden" accept="application/pdf" multiple onChange={handleUpload} />
-        </label>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {books.map(book => (
-          <BookItem key={book.id} book={book} />
-        ))}
-      </div>
+            {/* Wheel Container */}
+            <div className="relative w-80 h-80 shrink-0">
+                <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
 
-      {selectedBook && (
-        <PDFViewer 
-          url={selectedBook.filepath} 
-          title={selectedBook.title} 
-          bookId={selectedBook.id} // Added bookId prop
-          onClose={() => setSelectedBook(null)} 
-        />
-      )}
-
-      {menuTarget && (
-        <div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-72 text-center shadow-2xl">
-            <h3 className="text-gold text-xl mb-4 truncate">{menuTarget.title}</h3>
-            {isRenaming ? (
-              <div className="space-y-4">
-                <input 
-                  autoFocus
-                  className="w-full p-2 bg-black border border-gold rounded text-white"
-                  value={renameText}
-                  onChange={(e) => setRenameText(e.target.value)}
-                />
-                <div className="flex justify-center gap-2">
-                  <button onClick={() => setIsRenaming(false)} className="px-3 py-2 rounded bg-gray-700 text-white text-sm">Cancel</button>
-                  <button onClick={handleRename} className="px-3 py-2 rounded bg-gold text-black text-sm font-bold">Save</button>
+                <div 
+                    className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden"
+                    style={{
+                        transform: `rotate(${rotation}deg)`,
+                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                        background: `conic-gradient(
+                          ${Array.from({length: 16}).map((_, i) => 
+                            `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`
+                          ).join(', ')}
+                        )`
+                    }}
+                >
+                    {Array.from({length: 16}).map((_, i) => (
+                        <div 
+                            key={i}
+                            className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom"
+                            style={{
+                                transform: `rotate(${i * 22.5 + 11.25}deg)`, 
+                            }}
+                        >
+                            <span 
+                                className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl"
+                            >
+                                {i + 1}
+                            </span>
+                        </div>
+                    ))}
                 </div>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <button onClick={() => setIsRenaming(true)} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-white w-full">
-                  <Edit2 size={18} /> Rename
+
+                <button 
+                    onClick={handleSpin}
+                    disabled={isSpinning}
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-gold border-4 border-burgundy shadow-[0_0_20px_#FFD700] flex items-center justify-center z-10 active:scale-95 transition disabled:opacity-50 disabled:scale-100"
+                >
+                    <span className="text-burgundy font-black text-xl font-sans tracking-widest">SPIN</span>
                 </button>
-                <button onClick={handleDelete} className="flex items-center justify-center gap-2 p-3 rounded bg-red-900/50 hover:bg-red-900 text-white w-full">
-                  <Trash2 size={18} /> Delete
-                </button>
-                <button onClick={() => setMenuTarget(null)} className="p-2 mt-2 rounded text-gray-400 hover:text-white text-sm">
-                  Cancel
-                </button>
-              </div>
+            </div>
+
+            {winner && (
+                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black">
+                        <button onClick={() => setWinner(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button>
+                        
+                        <div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center"> 
+                            {showHistory ? (
+                                <HistoryList cardId={winner.id} onClose={() => setShowHistory(false)}/>
+                            ) : (
+                                <img src={winner.filepath} alt="Winner" className="max-w-full max-h-full object-contain" />
+                            )}
+                        </div>
+
+                        <div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4">
+                            <h3 className="text-gold text-2xl font-caveat mb-2">The Wheel has Spoken!</h3>
+                            <button 
+                                onClick={() => setShowHistory(!showHistory)}
+                                className="flex items-center gap-2 text-white/50 text-sm hover:text-white transition"
+                            >
+                                <Heart size={16} className="fill-lipstick text-lipstick"/> 
+                                <span>Revealed {winner.scratched_count + 1} times</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
-          </div>
         </div>
-      )}
-    </div>
-  );
+    );
 };
 
 const Settings = ({ user, logout }) => {
@@ -1522,26 +1448,16 @@ const Layout = ({ children, user, logout }) => {
 
 export default function App() {
   const [user, setUser] = useState(null);
-
   useEffect(() => {
-    try {
-        const saved = localStorage.getItem('user');
-        if (saved) setUser(JSON.parse(saved));
-    } catch (e) {
-        console.error("Failed to parse user data, logging out.");
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-    }
+    const saved = localStorage.getItem('user');
+    if (saved) setUser(JSON.parse(saved));
   }, []);
-
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
   };
-
   if (!user) return <Auth setUser={setUser} />;
-
   return (
     <Router>
       <Layout user={user} logout={logout}>
