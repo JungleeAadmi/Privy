@@ -74,24 +74,25 @@ db.serialize(() => {
         key TEXT PRIMARY KEY,
         value TEXT
     )`);
-
-    // --- NEW TABLES ---
     
-    // Dice Configuration
     db.run(`CREATE TABLE IF NOT EXISTS dice_options (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT, -- 'act' or 'location'
         text TEXT
     )`);
 
-    // Locations Checklist
     db.run(`CREATE TABLE IF NOT EXISTS location_unlocks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE,
-        unlocked_at DATETIME
+        unlocked_at DATETIME,
+        count INTEGER DEFAULT 0
     )`);
+    
+    // Migration: Add count column if missing
+    db.run(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`, (err) => {
+        // Ignore error if exists
+    });
 
-    // Fantasy Jar
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         text TEXT,
@@ -99,7 +100,7 @@ db.serialize(() => {
         pulled_at DATETIME -- NULL if still in jar
     )`);
     
-    // Seed default dice options if empty
+    // Seed default dice options
     db.get("SELECT count(*) as count FROM dice_options", (err, row) => {
         if (row && row.count === 0) {
             const defaults = [
@@ -112,7 +113,7 @@ db.serialize(() => {
         }
     });
 
-    // Seed default locations if empty
+    // Seed default locations
     db.get("SELECT count(*) as count FROM location_unlocks", (err, row) => {
         if (row && row.count === 0) {
             const defaults = ['Kitchen', 'Shower', 'Car', 'Balcony', 'Hotel', 'Woods', 'Living Room', 'Stairs'];
@@ -123,20 +124,17 @@ db.serialize(() => {
     });
 });
 
-// ... (Existing Ntfy Helper code remains the same) ...
+// --- Helper: Send Ntfy Notification with Image ---
 const sendNtfy = (cardId) => {
-    // 1. Get Settings
     db.all(`SELECT * FROM settings WHERE key IN ('ntfy_url', 'ntfy_topic')`, [], (err, rows) => {
         if (err || !rows) return;
         
         const settings = rows.reduce((acc, r) => ({...acc, [r.key]: r.value}), {});
         if (!settings.ntfy_url || !settings.ntfy_topic) return;
 
-        // 2. Get Card Image Path
         db.get(`SELECT filepath FROM cards WHERE id = ?`, [cardId], (err, card) => {
             if (!card) return;
 
-            // Construct absolute path to file
             const cleanPath = card.filepath.replace('/uploads/', '');
             const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
 
@@ -153,6 +151,7 @@ const sendNtfy = (cardId) => {
                     let contentType = 'application/octet-stream';
                     if (ext === '.png') contentType = 'image/png';
                     else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
+                    else if (ext === '.gif') contentType = 'image/gif';
                     
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
                     const ntfyUrl = new URL(`${baseUrl}/${settings.ntfy_topic}`);
@@ -179,6 +178,7 @@ const sendNtfy = (cardId) => {
     });
 };
 
+// --- File Upload Config ---
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const type = req.path.includes('book') ? 'books' : 'cards';
@@ -193,6 +193,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+// --- Helpers ---
 const auth = (req, res, next) => {
     const token = req.headers['authorization'];
     if (!token) return res.status(403).json({ error: 'No token' });
@@ -203,8 +204,7 @@ const auth = (req, res, next) => {
     } catch (e) { res.status(401).json({ error: 'Unauthorized' }); }
 };
 
-// ... (Existing Routes for Auth, User, Settings, Sections, Cards, Books remain unchanged) ...
-// (I will omit them for brevity, assume previous code is here, just adding NEW routes below)
+// --- Routes ---
 
 app.post('/api/register', (req, res) => {
     const { username, password, name, age, gender } = req.body;
@@ -264,9 +264,12 @@ app.put('/api/settings', auth, (req, res) => {
 app.post('/api/settings/test', auth, (req, res) => {
     const { ntfy_url, ntfy_topic } = req.body;
     if (!ntfy_url || !ntfy_topic) return res.status(400).json({ error: 'Missing Ntfy config' });
+
     const baseUrl = ntfy_url.replace(/\/$/, '');
     const url = `${baseUrl}/${ntfy_topic}`;
-    if (typeof fetch !== 'function') return res.status(500).json({error: 'Fetch missing'});
+
+    if (typeof fetch !== 'function') return res.status(500).json({error: 'Server fetch support missing'});
+
     fetch(url, {
         method: 'POST',
         body: "Privy Notification Test Successful! 🎉",
@@ -274,7 +277,7 @@ app.post('/api/settings/test', auth, (req, res) => {
     })
     .then(response => {
         if (response.ok) res.json({ success: true });
-        else res.status(500).json({ error: `Ntfy Error: ${response.status}` });
+        else res.status(500).json({ error: `Ntfy Error: ${response.status} ${response.statusText}` });
     })
     .catch(err => res.status(500).json({ error: err.message }));
 });
@@ -344,11 +347,13 @@ app.post('/api/cards', auth, upload.single('file'), (req, res) => {
 app.delete('/api/cards/:id', auth, (req, res) => {
     const id = req.params.id;
     db.get(`SELECT filepath FROM cards WHERE id = ?`, [id], (err, row) => {
-        if (!row) return res.status(404).json({error: 'Card not found'});
-        const cleanPath = row.filepath.replace('/uploads/', '');
-        const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
-        if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
-
+        if (row) {
+            try {
+                const cleanPath = row.filepath.replace('/uploads/', '');
+                const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
+                if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+            } catch(e) { console.error(e); }
+        }
         db.serialize(() => {
             db.run(`DELETE FROM card_history WHERE card_id = ?`, [id]);
             db.run(`DELETE FROM cards WHERE id = ?`, [id], (err) => {
@@ -365,7 +370,10 @@ app.post('/api/cards/:id/scratch', auth, (req, res) => {
         db.run(`INSERT INTO card_history (card_id) VALUES (?)`, [cardId]);
         db.run(`UPDATE cards SET scratched_count = scratched_count + 1 WHERE id = ?`, [cardId], (err) => {
             if (err) return res.status(500).json({ error: err.message });
+            
+            // Trigger Notification
             sendNtfy(cardId);
+            
             res.json({ success: true });
         });
     });
@@ -415,11 +423,13 @@ app.put('/api/books/:id', auth, (req, res) => {
 app.delete('/api/books/:id', auth, (req, res) => {
     const id = req.params.id;
     db.get(`SELECT filepath FROM books WHERE id = ?`, [id], (err, row) => {
-        if (!row) return res.status(404).json({error: 'Book not found'});
-        const cleanPath = row.filepath.replace('/uploads/', '');
-        const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
-        if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
-
+        if (row) {
+            try {
+                const cleanPath = row.filepath.replace('/uploads/', '');
+                const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
+                if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+            } catch(e) { console.error(e); }
+        }
         db.run(`DELETE FROM books WHERE id = ?`, [id], (err) => {
             if(err) return res.status(500).json({error: err.message});
             res.json({success: true});
@@ -427,49 +437,64 @@ app.delete('/api/books/:id', auth, (req, res) => {
     });
 });
 
+// --- Route: Extract Images from PDF ---
 app.post('/api/books/:id/extract', auth, (req, res) => {
     const bookId = req.params.id;
-    req.setTimeout(1200000);
+    req.setTimeout(1200000); // 20 min timeout for large PDFs
     db.get(`SELECT * FROM books WHERE id = ?`, [bookId], (err, book) => {
         if (err || !book) return res.status(404).json({ error: 'Book not found' });
+
         const bookPath = book.filepath.replace('/uploads/', '');
         const absBookPath = path.join(DATA_DIR, 'uploads', bookPath);
+        
         if (!fs.existsSync(absBookPath)) return res.status(404).json({ error: 'File missing' });
+
         const sectionTitle = `From: ${book.title}`;
         db.run(`INSERT INTO sections (title) VALUES (?)`, [sectionTitle], function(err) {
             if (err) return res.status(500).json({ error: 'Failed to create section' });
+            
             const sectionId = this.lastID;
             const tempDir = path.join(DATA_DIR, 'uploads', 'temp_' + Date.now());
             fs.mkdirSync(tempDir);
+
+            // -png: Output png
             const cmd = `pdfimages -png "${absBookPath}" "${tempDir}/img"`;
+            
             exec(cmd, { maxBuffer: 1024 * 1024 * 100, timeout: 600000 }, (error, stdout, stderr) => {
                 if (error) {
                     fs.rmSync(tempDir, { recursive: true, force: true });
                     return res.status(500).json({ error: 'Extraction failed/timed out' });
                 }
+
                 fs.readdir(tempDir, (err, files) => {
                     if (err) {
                         fs.rmSync(tempDir, { recursive: true, force: true });
                         return res.status(500).json({ error: 'Read dir failed' });
                     }
+
                     const cardPromises = files.map(file => {
                         return new Promise((resolve) => {
                             const tempFilePath = path.join(tempDir, file);
                             const stats = fs.statSync(tempFilePath);
+                            
+                            // Filter tiny images (< 50KB)
                             if (stats.size < 50 * 1024) { 
                                 fs.unlinkSync(tempFilePath);
                                 resolve(null);
                                 return;
                             }
+
                             const newFilename = `${Date.now()}_${file}`;
                             const newPath = path.join(DATA_DIR, 'uploads', 'cards', newFilename);
                             fs.renameSync(tempFilePath, newPath);
+
                             const dbPath = `/uploads/cards/${newFilename}`;
                             db.run(`INSERT INTO cards (filepath, section_id) VALUES (?, ?)`, [dbPath, sectionId], function() {
                                 resolve(this.lastID);
                             });
                         });
                     });
+
                     Promise.all(cardPromises).then(() => {
                         fs.rmSync(tempDir, { recursive: true, force: true });
                         res.json({ success: true, sectionId, message: 'Images extracted successfully' });
@@ -480,9 +505,7 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
     });
 });
 
-// --- NEW ROUTES FOR DICE, LOCATIONS, JAR ---
-
-// Dice
+// --- Dice ---
 app.get('/api/dice', auth, (req, res) => {
     db.all(`SELECT * FROM dice_options`, [], (err, rows) => {
         if(err) return res.status(500).json({error: err.message});
@@ -491,7 +514,7 @@ app.get('/api/dice', auth, (req, res) => {
 });
 
 app.put('/api/dice', auth, (req, res) => {
-    const { items } = req.body; // Array of {type, text}
+    const { items } = req.body;
     db.serialize(() => {
         db.run(`DELETE FROM dice_options`);
         const stmt = db.prepare(`INSERT INTO dice_options (type, text) VALUES (?, ?)`);
@@ -501,7 +524,7 @@ app.put('/api/dice', auth, (req, res) => {
     });
 });
 
-// Locations
+// --- Locations ---
 app.get('/api/locations', auth, (req, res) => {
     db.all(`SELECT * FROM location_unlocks`, [], (err, rows) => {
         if(err) return res.status(500).json({error: err.message});
@@ -510,9 +533,11 @@ app.get('/api/locations', auth, (req, res) => {
 });
 
 app.post('/api/locations/:id/toggle', auth, (req, res) => {
-    const { unlocked } = req.body;
-    const time = unlocked ? new Date().toISOString() : null;
-    db.run(`UPDATE location_unlocks SET unlocked_at = ? WHERE id = ?`, [time, req.params.id], (err) => {
+    const { increment } = req.body; 
+    const time = new Date().toISOString();
+    
+    // Increment count by 1, set unlocked_at to now
+    db.run(`UPDATE location_unlocks SET count = count + 1, unlocked_at = ? WHERE id = ?`, [time, req.params.id], (err) => {
         if(err) return res.status(500).json({error: err.message});
         res.json({success: true});
     });
@@ -520,15 +545,29 @@ app.post('/api/locations/:id/toggle', auth, (req, res) => {
 
 app.post('/api/locations', auth, (req, res) => {
     const { name } = req.body;
-    db.run(`INSERT INTO location_unlocks (name) VALUES (?)`, [name], function(err) {
+    db.run(`INSERT INTO location_unlocks (name, count) VALUES (?, 0)`, [name], function(err) {
         if(err) return res.status(500).json({error: err.message});
-        res.json({id: this.lastID, name, unlocked_at: null});
+        res.json({id: this.lastID, name, unlocked_at: null, count: 0});
     });
 });
 
-// Fantasy Jar
+app.delete('/api/locations/:id', auth, (req, res) => {
+    db.run(`DELETE FROM location_unlocks WHERE id = ?`, [req.params.id], (err) => {
+        if(err) return res.status(500).json({error: err.message});
+        res.json({success: true});
+    });
+});
+
+// --- Fantasy Jar ---
 app.get('/api/fantasies', auth, (req, res) => {
     db.all(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY created_at DESC`, [], (err, rows) => {
+        if(err) return res.status(500).json({error: err.message});
+        res.json(rows);
+    });
+});
+
+app.get('/api/fantasies/history', auth, (req, res) => {
+    db.all(`SELECT * FROM fantasies WHERE pulled_at IS NOT NULL ORDER BY pulled_at DESC`, [], (err, rows) => {
         if(err) return res.status(500).json({error: err.message});
         res.json(rows);
     });
@@ -543,13 +582,19 @@ app.post('/api/fantasies', auth, (req, res) => {
 });
 
 app.post('/api/fantasies/pull', auth, (req, res) => {
-    // Get random unpulled fantasy
     db.get(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY RANDOM() LIMIT 1`, [], (err, row) => {
         if(err) return res.status(500).json({error: err.message});
         if(!row) return res.json({empty: true});
         
         db.run(`UPDATE fantasies SET pulled_at = CURRENT_TIMESTAMP WHERE id = ?`, [row.id]);
         res.json(row);
+    });
+});
+
+app.post('/api/fantasies/:id/return', auth, (req, res) => {
+    db.run(`UPDATE fantasies SET pulled_at = NULL WHERE id = ?`, [req.params.id], (err) => {
+        if(err) return res.status(500).json({error: err.message});
+        res.json({success: true});
     });
 });
 

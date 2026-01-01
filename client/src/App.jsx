@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, CheckCircle } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -53,7 +53,7 @@ const playSound = (type) => {
     }
 };
 
-// --- Components ---
+// --- Shared Components ---
 
 // 1. Triple Tap Reveal Card
 const RevealCard = ({ image, id, onRevealComplete }) => {
@@ -341,6 +341,7 @@ const DiceGame = () => {
     const [result, setResult] = useState({ act: '?', loc: '?', time: '?' });
     const [rolling, setRolling] = useState(false);
     const [timerActive, setTimerActive] = useState(false);
+    const [timerPaused, setTimerPaused] = useState(false);
     const [timeLeft, setTimeLeft] = useState(0);
     const [isEditing, setIsEditing] = useState(false);
 
@@ -355,16 +356,25 @@ const DiceGame = () => {
 
     const times = [10, 15, 30, 45, 60, '∞'];
 
+    const generateTime = () => {
+        const standard = [10, 15, 30, 45, 60];
+        const pool = [...standard, ...standard, ...standard, '∞']; 
+        return pool[Math.floor(Math.random() * pool.length)];
+    };
+
     const handleRoll = () => {
         if (rolling) return;
         setRolling(true);
         setTimerActive(false); 
+        setTimerPaused(false);
+        setResult({ act: '?', loc: '?', time: '?' }); 
+        
         let steps = 0;
         const interval = setInterval(() => {
             setResult({
-                act: acts[Math.floor(Math.random() * acts.length)].text,
-                loc: locations[Math.floor(Math.random() * locations.length)].text,
-                time: times[Math.floor(Math.random() * times.length)]
+                act: acts.length ? acts[Math.floor(Math.random() * acts.length)].text : '?',
+                loc: locations.length ? locations[Math.floor(Math.random() * locations.length)].text : '?',
+                time: generateTime()
             });
             steps++;
             if (steps > 20) {
@@ -376,25 +386,37 @@ const DiceGame = () => {
 
     const startTimer = () => {
         if (result.time === '?' || result.time === '∞') return;
-        playSound('ting');
-        setTimeLeft(parseInt(result.time));
+        if (!timerActive) playSound('ting');
+        if (!timerPaused && !timerActive) setTimeLeft(parseInt(result.time));
         setTimerActive(true);
+        setTimerPaused(false);
+    };
+
+    const pauseTimer = () => {
+        setTimerPaused(true);
+        setTimerActive(false);
+    };
+
+    const stopTimer = () => {
+        setTimerActive(false);
+        setTimerPaused(false);
+        setTimeLeft(0);
     };
 
     useEffect(() => {
         let interval = null;
-        if (timerActive && timeLeft > 0) {
+        if (timerActive && !timerPaused && timeLeft > 0) {
             interval = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
         } else if (timerActive && timeLeft === 0) {
             playSound('end');
             setTimerActive(false);
         }
         return () => clearInterval(interval);
-    }, [timerActive, timeLeft]);
+    }, [timerActive, timerPaused, timeLeft]);
 
     if (isEditing) {
         return (
-            <div className="p-4 pb-24 text-center">
+            <div className="p-4 pb-24 text-center h-full overflow-y-auto">
                 <h2 className="text-gold text-2xl mb-4">Edit Dice</h2>
                 <div className="space-y-4 text-left">
                     <div>
@@ -424,39 +446,56 @@ const DiceGame = () => {
     }
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[80vh] p-4 gap-8">
-            <div className="flex gap-4 w-full justify-center">
+        <div className="flex flex-col items-center justify-start h-full p-4 gap-6 w-full max-w-md mx-auto pt-12 overflow-y-auto">
+            <div className="flex flex-wrap gap-4 w-full justify-center">
                 <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(128,0,32,0.8)]"><span className="text-white font-bold text-sm leading-tight">{result.act}</span></div>
                 <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(48,25,52,0.8)]"><span className="text-white font-bold text-sm leading-tight">{result.loc}</span></div>
                 <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1 shadow-[0_0_15px_rgba(255,215,0,0.3)]">
-                    {timerActive ? <span className="text-red-500 font-mono text-3xl animate-pulse">{timeLeft}</span> : <span className="text-white font-bold text-xl">{result.time === '∞' ? '∞' : result.time + 's'}</span>}
+                    {timerActive || timerPaused ? <span className="text-red-500 font-mono text-3xl animate-pulse">{timeLeft}</span> : <span className="text-white font-bold text-xl">{result.time === '∞' ? '∞' : result.time + 's'}</span>}
                 </div>
             </div>
-            {!rolling && result.time !== '?' && result.time !== '∞' && !timerActive && (
-                <button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>
-            )}
+
+            <div className="h-20 flex items-center justify-center w-full gap-6">
+                {!rolling && result.time !== '?' && result.time !== '∞' && (
+                    <>
+                       {timerActive ? (
+                           <button onClick={pauseTimer} className="w-16 h-16 rounded-full bg-yellow-600 flex items-center justify-center shadow-lg"><Pause fill="white" size={32} /></button>
+                       ) : (
+                           <button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>
+                       )}
+                       
+                       {(timerActive || timerPaused) && (
+                           <button onClick={stopTimer} className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg"><Square fill="white" size={28} /></button>
+                       )}
+                    </>
+                )}
+            </div>
+
             <button onClick={handleRoll} disabled={rolling || timerActive} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50">ROLL</button>
-            <button onClick={() => setIsEditing(true)} className="text-gray-500 flex items-center gap-2 mt-8"><Edit2 size={16} /> Edit Dice</button>
+            <button onClick={() => setIsEditing(true)} className="text-gray-500 flex items-center gap-2 mt-4"><Edit2 size={16} /> Edit Dice</button>
         </div>
     );
 };
 
+// 6. Extras Tab (Locations + Jar)
 const LocationUnlocks = () => {
     const [locations, setLocations] = useState([]);
     const [newLoc, setNewLoc] = useState("");
+    const [deleteId, setDeleteId] = useState(null);
 
-    useEffect(() => {
+    const fetchLocs = () => {
         fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(setLocations);
-    }, []);
+    };
 
-    const toggleLoc = async (id, currentStatus) => {
+    useEffect(() => { fetchLocs(); }, []);
+
+    const toggleLoc = async (id) => {
         await fetch(`${API_URL}/locations/${id}/toggle`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
-            body: JSON.stringify({ unlocked: !currentStatus })
+            body: JSON.stringify({ increment: true })
         });
-        const updated = locations.map(l => l.id === id ? {...l, unlocked_at: !currentStatus ? new Date().toISOString() : null} : l);
-        setLocations(updated);
+        fetchLocs();
     };
 
     const addLoc = async () => {
@@ -466,28 +505,65 @@ const LocationUnlocks = () => {
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
             body: JSON.stringify({ name: newLoc })
         });
-        if(res.ok) {
-            const data = await res.json();
-            setLocations([...locations, {id: data.id, name: data.name, unlocked_at: null}]);
-            setNewLoc("");
-        }
+        if(res.ok) { fetchLocs(); setNewLoc(""); }
+    };
+
+    const deleteLoc = async () => {
+        if(!deleteId) return;
+        await fetch(`${API_URL}/locations/${deleteId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        setDeleteId(null);
+        fetchLocs();
+    };
+
+    const LocationItem = ({ loc }) => {
+        const longPressProps = useLongPress(() => setDeleteId(loc.id), 800);
+        return (
+            <div 
+                {...longPressProps}
+                onClick={() => !deleteId && toggleLoc(loc.id)}
+                className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer select-none ${loc.count > 0 ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}
+            >
+                <div className="flex items-center gap-4">
+                    <span className={`text-lg font-caveat ${loc.count > 0 ? 'text-gold' : 'text-gray-400'}`}>{loc.name}</span>
+                    {loc.count > 0 && <span className="bg-gold text-black text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{loc.count}x</span>}
+                </div>
+                {loc.count > 0 ? (
+                    <div className="text-right flex-shrink-0">
+                        <CheckCircle className="text-green-500 inline mb-1"/>
+                        <div className="text-xs text-gray-500">{new Date(loc.unlocked_at).toLocaleDateString()}</div>
+                    </div>
+                ) : (
+                    <div className="w-6 h-6 rounded-full border-2 border-gray-600 flex-shrink-0"></div>
+                )}
+            </div>
+        );
     };
 
     return (
         <div>
             <h2 className="text-gold text-3xl mb-6 flex items-center gap-2"><MapPin/> Locations</h2>
             <div className="grid grid-cols-1 gap-3 mb-6">
-                {locations.map(loc => (
-                    <div key={loc.id} onClick={() => toggleLoc(loc.id, !!loc.unlocked_at)} className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer ${loc.unlocked_at ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}>
-                        <span className={`text-lg ${loc.unlocked_at ? 'text-gold' : 'text-gray-400'}`}>{loc.name}</span>
-                        {loc.unlocked_at ? <div className="text-right"><CheckCircle className="text-green-500 inline mb-1"/><div className="text-xs text-gray-500">{new Date(loc.unlocked_at).toLocaleDateString()}</div></div> : <div className="w-6 h-6 rounded-full border-2 border-gray-600"></div>}
-                    </div>
-                ))}
+                {locations.map(loc => <LocationItem key={loc.id} loc={loc} />)}
             </div>
             <div className="flex gap-2">
                 <input className="flex-1 bg-black border border-gray-600 rounded p-3 text-white" placeholder="Add custom location..." value={newLoc} onChange={e => setNewLoc(e.target.value)} />
                 <button onClick={addLoc} className="bg-gray-800 text-gold p-3 rounded hover:bg-gray-700"><Plus/></button>
             </div>
+            {deleteId && (
+                <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+                    <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center">
+                        <Trash2 size={40} className="mx-auto text-lipstick mb-4" />
+                        <h3 className="text-white text-xl mb-4">Delete Location?</h3>
+                        <div className="flex justify-center gap-4">
+                            <button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button>
+                            <button onClick={deleteLoc} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -495,6 +571,15 @@ const LocationUnlocks = () => {
 const FantasyJar = () => {
     const [wish, setWish] = useState("");
     const [pulled, setPulled] = useState(null);
+    const [history, setHistory] = useState([]);
+
+    const fetchHistory = () => {
+        fetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+            .then(res => res.json())
+            .then(setHistory);
+    };
+
+    useEffect(() => { fetchHistory(); }, []);
 
     const handleDrop = async () => {
         if(!wish.trim()) return;
@@ -517,12 +602,22 @@ const FantasyJar = () => {
             alert("The jar is empty! Add more fantasies.");
         } else {
             setPulled(data.text);
+            fetchHistory();
         }
+    };
+
+    const handleReturn = async (id) => {
+        await fetch(`${API_URL}/fantasies/${id}/return`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        fetchHistory();
     };
 
     return (
         <div className="flex flex-col items-center justify-center gap-8">
             <h2 className="text-gold text-3xl font-caveat">The Fantasy Jar</h2>
+            
             {pulled ? (
                 <div className="bg-white/10 p-8 rounded-xl border-2 border-gold text-center animate-fadeIn w-full max-w-sm">
                     <Sparkles className="text-gold mx-auto mb-4" size={40} />
@@ -534,15 +629,35 @@ const FantasyJar = () => {
                     <span className="text-gray-500 group-hover:text-gold font-bold text-xl">Tap to Pull</span>
                 </div>
             )}
-            <div className="w-full max-w-sm mt-8">
+
+            <div className="w-full max-w-sm mt-4">
                 <textarea className="w-full bg-black border border-gray-700 rounded p-4 text-white mb-2 focus:border-burgundy outline-none" placeholder="Whisper a fantasy..." value={wish} onChange={e => setWish(e.target.value)} />
                 <button onClick={handleDrop} className="w-full bg-burgundy text-white py-3 rounded font-bold hover:bg-red-800 transition">Drop in Jar</button>
             </div>
+
+            {/* History List */}
+            {history.length > 0 && (
+                <div className="w-full max-w-sm mt-8">
+                    <h3 className="text-gray-500 text-sm uppercase tracking-widest mb-4">Pulled Memories</h3>
+                    <div className="space-y-3">
+                        {history.map(item => (
+                            <div key={item.id} className="bg-gray-900 p-4 rounded-lg border border-gray-800 flex justify-between items-center">
+                                <div>
+                                    <p className="text-gold font-caveat text-lg">{item.text}</p>
+                                    <p className="text-xs text-gray-500">{new Date(item.pulled_at).toLocaleDateString()}</p>
+                                </div>
+                                <button onClick={() => handleReturn(item.id)} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded text-white flex items-center gap-1" title="Put back in jar">
+                                    <RotateCw size={12}/> Return
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
-// 6. Extras Tab (Locations + Jar)
 const Extras = () => {
     return (
         <div className="p-4 pb-24 space-y-12">
@@ -1011,149 +1126,6 @@ const Home = () => {
               <button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button>
               <button onClick={handleDeleteCard} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button>
             </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const Books = () => {
-  const [books, setBooks] = useState([]);
-  const [selectedBook, setSelectedBook] = useState(null);
-  const [menuTarget, setMenuTarget] = useState(null);
-  const [renameText, setRenameText] = useState("");
-  const [isRenaming, setIsRenaming] = useState(false);
-
-  const loadBooks = async () => {
-    try {
-      const res = await fetch(`${API_URL}/books`, {
-         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      if (res.ok) setBooks(await res.json());
-    } catch(e) { console.error(e); }
-  };
-
-  useEffect(() => {
-    loadBooks();
-    const interval = setInterval(loadBooks, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
-    for(const file of files) {
-        const formData = new FormData();
-        formData.append('file', file);
-        await fetch(`${API_URL}/books`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-          body: formData
-        });
-    }
-    loadBooks();
-  };
-
-  const handleRename = async () => {
-    if (!menuTarget || !renameText.trim()) return;
-    await fetch(`${API_URL}/books/${menuTarget.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
-      body: JSON.stringify({ title: renameText })
-    });
-    setMenuTarget(null);
-    setIsRenaming(false);
-    loadBooks();
-  };
-
-  const handleDelete = async () => {
-    if (!menuTarget) return;
-    await fetch(`${API_URL}/books/${menuTarget.id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-    });
-    setMenuTarget(null);
-    loadBooks();
-  };
-
-  const BookItem = ({ book }) => {
-    const longPressProps = useLongPress(() => {
-      setMenuTarget(book);
-      setRenameText(book.title);
-      setIsRenaming(false);
-    }, 800);
-
-    return (
-      <div 
-        {...longPressProps}
-        onClick={() => !menuTarget && setSelectedBook(book)}
-        className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md group select-none"
-      >
-        <Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/>
-        <div className="overflow-hidden">
-          <h3 className="text-xl text-white truncate w-full">{book.title}</h3>
-          <p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="p-6 pb-24 pt-4">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl text-gold">Library</h2>
-        <label className="flex items-center gap-2 bg-burgundy px-4 py-2 rounded-full cursor-pointer hover:bg-lipstick">
-          <Upload size={18} className="text-white"/>
-          <span className="text-white text-sm">Add Books (PDF)</span>
-          <input type="file" className="hidden" accept="application/pdf" multiple onChange={handleUpload} />
-        </label>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {books.map(book => (
-          <BookItem key={book.id} book={book} />
-        ))}
-      </div>
-
-      {selectedBook && (
-        <PDFViewer 
-          url={selectedBook.filepath} 
-          title={selectedBook.title} 
-          bookId={selectedBook.id} // Added bookId prop
-          onClose={() => setSelectedBook(null)} 
-        />
-      )}
-
-      {menuTarget && (
-        <div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-72 text-center shadow-2xl">
-            <h3 className="text-gold text-xl mb-4 truncate">{menuTarget.title}</h3>
-            {isRenaming ? (
-              <div className="space-y-4">
-                <input 
-                  autoFocus
-                  className="w-full p-2 bg-black border border-gold rounded text-white"
-                  value={renameText}
-                  onChange={(e) => setRenameText(e.target.value)}
-                />
-                <div className="flex justify-center gap-2">
-                  <button onClick={() => setIsRenaming(false)} className="px-3 py-2 rounded bg-gray-700 text-white text-sm">Cancel</button>
-                  <button onClick={handleRename} className="px-3 py-2 rounded bg-gold text-black text-sm font-bold">Save</button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <button onClick={() => setIsRenaming(true)} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-white w-full">
-                  <Edit2 size={18} /> Rename
-                </button>
-                <button onClick={handleDelete} className="flex items-center justify-center gap-2 p-3 rounded bg-red-900/50 hover:bg-red-900 text-white w-full">
-                  <Trash2 size={18} /> Delete
-                </button>
-                <button onClick={() => setMenuTarget(null)} className="p-2 mt-2 rounded text-gray-400 hover:text-white text-sm">
-                  Cancel
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
