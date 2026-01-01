@@ -11,6 +11,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
+const { exec } = require('child_process'); // For running pdfimages
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -82,13 +83,9 @@ const sendNtfy = (cardId) => {
 
     // 1. Get Settings
     db.all(`SELECT * FROM settings WHERE key IN ('ntfy_url', 'ntfy_topic')`, [], (err, rows) => {
-        if (err) {
-            console.error("[Ntfy] DB Error fetching settings:", err.message);
-            return;
-        }
+        if (err || !rows) return;
         
         const settings = rows.reduce((acc, r) => ({...acc, [r.key]: r.value}), {});
-        
         if (!settings.ntfy_url || !settings.ntfy_topic) {
             console.warn("[Ntfy] Aborted: URL or Topic not configured in settings.");
             return;
@@ -122,26 +119,26 @@ const sendNtfy = (cardId) => {
                     const { size } = fs.statSync(absPath);
                     const ext = path.extname(absPath) || '.jpg';
                     
-                    // FIX 1: Generate Unique Filename to bust iOS cache
+                    // Generate Unique Filename to bust iOS cache
                     const timestamp = Date.now();
                     const filename = `card_${cardId}_${timestamp}${ext}`;
 
-                    // FIX 2: Determine correct MIME type
+                    // Determine correct MIME type
                     let contentType = 'application/octet-stream';
                     if (ext === '.png') contentType = 'image/png';
                     else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
                     else if (ext === '.gif') contentType = 'image/gif';
                     
-                    // Construct URL (handle trailing slash)
+                    // Construct URL
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
                     
-                    // Use URL Query Parameters for metadata to safely support Emojis
+                    // Use URL Query Parameters for metadata
                     const ntfyUrl = new URL(`${baseUrl}/${settings.ntfy_topic}`);
                     ntfyUrl.searchParams.append('message', "Today's Position \uD83D\uDE09"); // 😉
                     ntfyUrl.searchParams.append('title', 'Privy: Card Revealed!');
                     ntfyUrl.searchParams.append('tags', 'heart,fire,camera');
                     ntfyUrl.searchParams.append('priority', 'high');
-                    ntfyUrl.searchParams.append('filename', filename); // Send unique filename
+                    ntfyUrl.searchParams.append('filename', filename);
 
                     console.log(`[Ntfy] Sending ${size} bytes to ${ntfyUrl.toString()} as ${filename} (${contentType})...`);
 
@@ -150,7 +147,7 @@ const sendNtfy = (cardId) => {
                         body: fileBuffer,
                         headers: {
                             'Content-Length': size.toString(),
-                            'Content-Type': contentType // Explicit content type
+                            'Content-Type': contentType
                         }
                     })
                     .then(async res => {
@@ -390,7 +387,6 @@ app.get('/api/cards/:id/history', auth, (req, res) => {
     });
 });
 
-// --- Route: App Reset ---
 app.post('/api/reset-app', auth, (req, res) => {
     db.serialize(() => {
         // Clear history logs
@@ -439,6 +435,82 @@ app.delete('/api/books/:id', auth, (req, res) => {
         db.run(`DELETE FROM books WHERE id = ?`, [id], (err) => {
             if(err) return res.status(500).json({error: err.message});
             res.json({success: true});
+        });
+    });
+});
+
+// --- Route: Extract Images from PDF ---
+app.post('/api/books/:id/extract', auth, (req, res) => {
+    const bookId = req.params.id;
+    
+    // 1. Get Book Info
+    db.get(`SELECT * FROM books WHERE id = ?`, [bookId], (err, book) => {
+        if (err || !book) return res.status(404).json({ error: 'Book not found' });
+
+        const bookPath = book.filepath.replace('/uploads/', '');
+        const absBookPath = path.join(DATA_DIR, 'uploads', bookPath);
+        
+        if (!fs.existsSync(absBookPath)) return res.status(404).json({ error: 'File missing' });
+
+        // 2. Create Section
+        const sectionTitle = `From: ${book.title}`;
+        db.run(`INSERT INTO sections (title) VALUES (?)`, [sectionTitle], function(err) {
+            if (err) return res.status(500).json({ error: 'Failed to create section' });
+            
+            const sectionId = this.lastID;
+            
+            // 3. Create Temp Dir for Extraction
+            const tempDir = path.join(DATA_DIR, 'uploads', 'temp_' + Date.now());
+            fs.mkdirSync(tempDir);
+
+            // 4. Run pdfimages to extract PNGs
+            // -png: Output png files
+            const cmd = `pdfimages -png "${absBookPath}" "${tempDir}/img"`;
+            
+            exec(cmd, (error, stdout, stderr) => {
+                if (error) {
+                    console.error("PDF Extract Error:", error);
+                    // Cleanup
+                    fs.rmSync(tempDir, { recursive: true, force: true });
+                    return res.status(500).json({ error: 'Extraction failed' });
+                }
+
+                // 5. Process Extracted Files
+                fs.readdir(tempDir, (err, files) => {
+                    if (err) return res.status(500).json({ error: 'Read dir failed' });
+
+                    const cardPromises = files.map(file => {
+                        return new Promise((resolve) => {
+                            const tempFilePath = path.join(tempDir, file);
+                            
+                            // Check size (Filter small junk images < 50KB)
+                            const stats = fs.statSync(tempFilePath);
+                            if (stats.size < 50 * 1024) { // 50KB
+                                fs.unlinkSync(tempFilePath);
+                                resolve(null);
+                                return;
+                            }
+
+                            // Move to cards folder
+                            const newFilename = `${Date.now()}_${file}`;
+                            const newPath = path.join(DATA_DIR, 'uploads', 'cards', newFilename);
+                            fs.renameSync(tempFilePath, newPath);
+
+                            // Add to DB
+                            const dbPath = `/uploads/cards/${newFilename}`;
+                            db.run(`INSERT INTO cards (filepath, section_id) VALUES (?, ?)`, [dbPath, sectionId], function() {
+                                resolve(this.lastID);
+                            });
+                        });
+                    });
+
+                    Promise.all(cardPromises).then(() => {
+                        // Cleanup Temp Dir
+                        fs.rmSync(tempDir, { recursive: true, force: true });
+                        res.json({ success: true, sectionId, message: 'Images extracted successfully' });
+                    });
+                });
+            });
         });
     });
 });

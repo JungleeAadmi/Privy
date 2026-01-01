@@ -1,19 +1,17 @@
 #!/bin/bash
 
 # Privy Installer Script
-# Usage: sudo ./install.sh
+# Usage: bash <(curl -sSL https://raw.githubusercontent.com/JungleeAadmi/Privy/main/install.sh)
 
 echo "🍷 Welcome to Privy Installer..."
 
 # 1. System Updates & Interactive Timezone
 echo "🔄 Updating system packages..."
 apt-get update && apt-get upgrade -y
-# Install dialog to ensure the UI has the necessary backend tools
-apt-get install -y dialog git
+# Install dialog for UI and poppler-utils for PDF image extraction
+apt-get install -y dialog git poppler-utils
 
 echo "🌍 Setting Timezone..."
-# FIX: Force input (0), output (1), and error (2) to /dev/tty
-# This ensures the interactive menu works correctly even when piped via curl
 if [ -c /dev/tty ]; then
     export TERM=${TERM:-xterm}
     dpkg-reconfigure tzdata < /dev/tty > /dev/tty 2> /dev/tty
@@ -32,15 +30,12 @@ DATA_DIR="$APP_DIR/data"
 mkdir -p "$DATA_DIR/uploads/cards"
 mkdir -p "$DATA_DIR/uploads/books"
 
-# 4. Handle File Retrieval (Curl vs Local)
+# 4. Handle File Retrieval
 echo "📂 Moving files to $APP_DIR..."
 
-# Check if we are running locally (files exist) or via curl (need to download)
 if [ -f "server/server.js" ]; then
-    # Local install
     cp -r . "$APP_DIR/"
 else
-    # Curl install - Download files to a temp location first
     echo "📥 Downloading application files..."
     TEMP_DIR=$(mktemp -d)
     git clone https://github.com/JungleeAadmi/Privy.git "$TEMP_DIR"
@@ -51,17 +46,14 @@ fi
 # 5. Install App Dependencies
 echo "🧱 Installing Application Dependencies..."
 cd "$APP_DIR"
-# Install backend deps
 npm install
-# Install frontend deps
 cd client
 npm install
-# Build the React frontend
 echo "🎨 Building Frontend..."
 npm run build
 cd ..
 
-# 6. Create Systemd Service (Auto-start on boot)
+# 6. Create Systemd Service
 echo "⚙️ Creating System Service..."
 cat <<EOF > /etc/systemd/system/privy.service
 [Unit]

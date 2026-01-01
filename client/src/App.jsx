@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -130,14 +130,47 @@ const HistoryList = ({ cardId, onClose }) => {
 };
 
 // 3. PDF Viewer Modal
-const PDFViewer = ({ url, title, onClose }) => {
+const PDFViewer = ({ url, title, bookId, onClose }) => {
+  const [isExtracting, setIsExtracting] = useState(false);
+
+  const handleExtract = async () => {
+    if (!confirm("Extract all images from this book into a new card section? This might take a moment.")) return;
+    
+    setIsExtracting(true);
+    try {
+        const res = await fetch(`${API_URL}/books/${bookId}/extract`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        const data = await res.json();
+        if (res.ok) {
+            alert(`Success! ${data.message}. Check your Cards tab.`);
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (e) {
+        alert("Extraction failed. Check network or server.");
+    }
+    setIsExtracting(false);
+  };
+
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
       <div className="flex justify-between items-center px-4 pb-4 pt-12 bg-gray-900 border-b border-gold/20 safe-top">
-        <h3 className="text-gold text-xl truncate pr-4 max-w-[80%]">{title}</h3>
-        <button onClick={onClose} className="p-2 bg-burgundy rounded-full text-white hover:bg-lipstick shadow-lg">
-          <X size={24} />
-        </button>
+        <h3 className="text-gold text-xl truncate pr-4 max-w-[60%]">{title}</h3>
+        <div className="flex gap-4">
+            <button 
+                onClick={handleExtract} 
+                disabled={isExtracting}
+                className={`p-2 rounded-full text-white shadow-lg ${isExtracting ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'}`}
+                title="Extract Images to Cards"
+            >
+                {isExtracting ? <RefreshCw className="animate-spin" size={24} /> : <Scissors size={24} />}
+            </button>
+            <button onClick={onClose} className="p-2 bg-burgundy rounded-full text-white hover:bg-lipstick shadow-lg">
+                <X size={24} />
+            </button>
+        </div>
       </div>
       <div className="flex-1 w-full h-full bg-gray-800 flex items-center justify-center p-2 overflow-hidden">
         <object 
@@ -807,6 +840,7 @@ const Books = () => {
         <PDFViewer 
           url={selectedBook.filepath} 
           title={selectedBook.title} 
+          bookId={selectedBook.id} // Added bookId prop
           onClose={() => setSelectedBook(null)} 
         />
       )}
@@ -848,7 +882,7 @@ const Books = () => {
   );
 };
 
-const Settings = ({ user }) => {
+const Settings = ({ user, logout }) => {
   const [form, setForm] = useState({ ...user, password: '' });
 
   const handleUpdate = async (e) => {
@@ -954,7 +988,7 @@ const Layout = ({ children, user, logout }) => {
   
   // Reset App Modal States
   const [showResetModal, setShowResetModal] = useState(false);
-  const [resetStep, setResetStep] = useState(1); // 1 = First confirm, 2 = Final confirm
+  const [resetStep, setResetStep] = useState(1);
   const [resetInput, setResetInput] = useState("");
 
   const handleReload = async () => {
@@ -977,7 +1011,6 @@ const Layout = ({ children, user, logout }) => {
         setResetStep(2);
         setResetInput("");
     } else {
-        // Final Step
         await fetch(`${API_URL}/reset-app`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -986,7 +1019,7 @@ const Layout = ({ children, user, logout }) => {
         setShowResetModal(false);
         setResetStep(1);
         setResetInput("");
-        handleReload(); // Reload to reflect changes
+        handleReload();
     }
   };
 
@@ -1107,7 +1140,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/spin" element={<Spin />} />
           <Route path="/books" element={<Books />} />
-          <Route path="/settings" element={<Settings user={user} />} />
+          <Route path="/settings" element={<Settings user={user} logout={logout} />} />
           <Route path="/notifications" element={<Notifications />} />
         </Routes>
       </Layout>
