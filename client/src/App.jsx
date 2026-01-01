@@ -29,33 +29,35 @@ const useLongPress = (callback = () => {}, ms = 800) => {
 
 // --- Helper Functions ---
 const playSound = (type) => {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    
-    if (type === 'ting') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(800, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
-        gain.gain.setValueAtTime(0.5, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.5);
-    } else if (type === 'end') {
-        // Double ting
-        playSound('ting');
-        setTimeout(() => playSound('ting'), 200);
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        if (type === 'ting') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
+            gain.gain.setValueAtTime(0.5, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.5);
+        } else if (type === 'end') {
+            playSound('ting');
+            setTimeout(() => playSound('ting'), 200);
+        }
+    } catch (e) {
+        console.warn("Audio play failed", e);
     }
 };
 
 // --- Shared Components ---
 
-// 1. Triple Tap Reveal Card
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
@@ -107,19 +109,20 @@ const RevealCard = ({ image, id, onRevealComplete }) => {
   );
 };
 
-// 2. History List Component
 const HistoryList = ({ cardId, onClose }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchHistory = async () => {
-      const res = await fetch(`${API_URL}/cards/${cardId}/history`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      if (res.ok) {
-        setHistory(await res.json());
-      }
+      try {
+        const res = await fetch(`${API_URL}/cards/${cardId}/history`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (res.ok) {
+          setHistory(await res.json());
+        }
+      } catch (e) { console.error(e); }
       setLoading(false);
     };
     fetchHistory();
@@ -155,7 +158,6 @@ const HistoryList = ({ cardId, onClose }) => {
   );
 };
 
-// 3. PDF Viewer Modal
 const PDFViewer = ({ url, title, bookId, onClose }) => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [progressText, setProgressText] = useState("");
@@ -254,7 +256,6 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   );
 };
 
-// 4. Section Tab Component
 const SectionTab = ({ section, activeSection, setActiveSection, onLongPress }) => {
     const longPressProps = useLongPress(() => {
         if (onLongPress) onLongPress(section);
@@ -285,21 +286,25 @@ const Auth = ({ setUser }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const endpoint = isLogin ? '/login' : '/register';
-    const res = await fetch(`${API_URL}${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form)
-    });
-    const data = await res.json();
-    if (data.token) {
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      setUser(data.user);
-    } else if (data.success) {
-      setIsLogin(true); 
-    } else {
-      alert(data.error);
+    try {
+      const endpoint = isLogin ? '/login' : '/register';
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      const data = await res.json();
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        setUser(data.user);
+      } else if (data.success) {
+        setIsLogin(true); 
+      } else {
+        alert(data.error);
+      }
+    } catch (e) {
+      alert("Connection error");
     }
   };
 
@@ -334,7 +339,159 @@ const Auth = ({ setUser }) => {
   );
 };
 
-// 5. Dice Game
+const Spin = () => {
+    const [cards, setCards] = useState([]);
+    const [sections, setSections] = useState([]);
+    const [activeSection, setActiveSection] = useState(null);
+    const [rotation, setRotation] = useState(0);
+    const [isSpinning, setIsSpinning] = useState(false);
+    const [winner, setWinner] = useState(null); 
+    const [showHistory, setShowHistory] = useState(false);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            const token = localStorage.getItem('token');
+            const headers = { Authorization: `Bearer ${token}` };
+            try {
+                const [cardsRes, sectionsRes] = await Promise.all([
+                    fetch(`${API_URL}/cards`, { headers }),
+                    fetch(`${API_URL}/sections`, { headers })
+                ]);
+                if (cardsRes.ok && sectionsRes.ok) {
+                    setCards(await cardsRes.json());
+                    setSections(await sectionsRes.json());
+                }
+            } catch (e) { console.error(e); }
+        };
+        fetchData();
+    }, []);
+
+    // Prepare Wheel Gradient Style outside JSX
+    const wheelGradient = `conic-gradient(
+        ${Array.from({length: 16}).map((_, i) => 
+          `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`
+        ).join(', ')}
+    )`;
+
+    const handleSpin = () => {
+        if (isSpinning) return;
+
+        const pool = cards.filter(c => {
+            if (activeSection === null) return c.section_id == null; 
+            return c.section_id === activeSection;
+        });
+
+        if (pool.length === 0) {
+            alert("No cards in this section to spin!");
+            return;
+        }
+
+        setIsSpinning(true);
+        setWinner(null);
+
+        const SEGMENT_COUNT = 16;
+        const slots = Array.from({length: SEGMENT_COUNT}, () => pool[Math.floor(Math.random() * pool.length)]);
+        const winningIndex = Math.floor(Math.random() * SEGMENT_COUNT);
+        const winningCard = slots[winningIndex];
+
+        const segmentAngle = 360 / SEGMENT_COUNT; 
+        const offsetToCenter = (winningIndex * segmentAngle) + (segmentAngle / 2);
+        const targetAngle = 360 - offsetToCenter; 
+        
+        let delta = targetAngle - (rotation % 360);
+        if (delta < 0) delta += 360;
+        
+        const totalRotation = rotation + (5 * 360) + delta;
+        setRotation(totalRotation);
+
+        setTimeout(() => {
+            setIsSpinning(false);
+            setWinner(winningCard);
+            fetch(`${API_URL}/cards/${winningCard.id}/scratch`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
+        }, 4000);
+    };
+
+    return (
+        <div className="flex flex-col items-center w-full min-h-full py-4">
+            <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">
+                {sections.map(s => (
+                    <SectionTab 
+                        key={s.id} 
+                        section={s} 
+                        activeSection={activeSection} 
+                        setActiveSection={setActiveSection} 
+                        onLongPress={null} 
+                    />
+                ))}
+            </div>
+
+            <div className="relative w-80 h-80 shrink-0">
+                <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
+                <div 
+                    className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden"
+                    style={{
+                        transform: `rotate(${rotation}deg)`,
+                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                        background: wheelGradient
+                    }}
+                >
+                    {Array.from({length: 16}).map((_, i) => (
+                        <div 
+                            key={i}
+                            className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom"
+                            style={{
+                                transform: `rotate(${i * 22.5 + 11.25}deg)`, 
+                            }}
+                        >
+                            <span className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl">
+                                {i + 1}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+
+                <button 
+                    onClick={handleSpin}
+                    disabled={isSpinning}
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-gold border-4 border-burgundy shadow-[0_0_20px_#FFD700] flex items-center justify-center z-10 active:scale-95 transition disabled:opacity-50 disabled:scale-100"
+                >
+                    <span className="text-burgundy font-black text-xl font-sans tracking-widest">SPIN</span>
+                </button>
+            </div>
+
+            {winner && (
+                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black">
+                        <button onClick={() => setWinner(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button>
+                        
+                        <div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center"> 
+                            {showHistory ? (
+                                <HistoryList cardId={winner.id} onClose={() => setShowHistory(false)}/>
+                            ) : (
+                                <img src={winner.filepath} alt="Winner" className="max-w-full max-h-full object-contain" />
+                            )}
+                        </div>
+
+                        <div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4">
+                            <h3 className="text-gold text-2xl font-caveat mb-2">The Wheel has Spoken!</h3>
+                            <button 
+                                onClick={() => setShowHistory(!showHistory)}
+                                className="flex items-center gap-2 text-white/50 text-sm hover:text-white transition"
+                            >
+                                <Heart size={16} className="fill-lipstick text-lipstick"/> 
+                                <span>Revealed {winner.scratched_count + 1} times</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const DiceGame = () => {
     const [acts, setActs] = useState([]);
     const [locations, setLocations] = useState([]);
@@ -353,8 +510,6 @@ const DiceGame = () => {
                 setLocations(data.filter(d => d.type === 'location'));
             });
     }, []);
-
-    const times = [10, 15, 30, 45, 60, '∞'];
 
     const generateTime = () => {
         const standard = [10, 15, 30, 45, 60];
@@ -668,164 +823,6 @@ const Extras = () => {
     );
 };
 
-const Spin = () => {
-    const [cards, setCards] = useState([]);
-    const [sections, setSections] = useState([]);
-    const [activeSection, setActiveSection] = useState(null);
-    const [rotation, setRotation] = useState(0);
-    const [isSpinning, setIsSpinning] = useState(false);
-    const [winner, setWinner] = useState(null); 
-    const [showHistory, setShowHistory] = useState(false);
-
-    useEffect(() => {
-        const fetchData = async () => {
-            const token = localStorage.getItem('token');
-            const headers = { Authorization: `Bearer ${token}` };
-            try {
-                const [cardsRes, sectionsRes] = await Promise.all([
-                    fetch(`${API_URL}/cards`, { headers }),
-                    fetch(`${API_URL}/sections`, { headers })
-                ]);
-                if (cardsRes.ok && sectionsRes.ok) {
-                    setCards(await cardsRes.json());
-                    setSections(await sectionsRes.json());
-                }
-            } catch (e) { console.error(e); }
-        };
-        fetchData();
-    }, []);
-
-    const handleSpin = () => {
-        if (isSpinning) return;
-
-        const pool = cards.filter(c => {
-            if (activeSection === null) return c.section_id == null; 
-            return c.section_id === activeSection;
-        });
-
-        if (pool.length === 0) {
-            alert("No cards in this section to spin!");
-            return;
-        }
-
-        setIsSpinning(true);
-        setWinner(null);
-
-        const SEGMENT_COUNT = 16;
-        const slots = Array.from({length: SEGMENT_COUNT}, () => pool[Math.floor(Math.random() * pool.length)]);
-        const winningIndex = Math.floor(Math.random() * SEGMENT_COUNT);
-        const winningCard = slots[winningIndex];
-
-        const segmentAngle = 360 / SEGMENT_COUNT; 
-        
-        const offsetToCenter = (winningIndex * segmentAngle) + (segmentAngle / 2);
-        const targetAngle = 360 - offsetToCenter; 
-        
-        let delta = targetAngle - (rotation % 360);
-        if (delta < 0) delta += 360;
-        
-        const totalRotation = rotation + (5 * 360) + delta;
-        
-        setRotation(totalRotation);
-
-        setTimeout(() => {
-            setIsSpinning(false);
-            setWinner(winningCard);
-            
-            fetch(`${API_URL}/cards/${winningCard.id}/scratch`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-            });
-        }, 4000);
-    };
-
-    return (
-        <div className="flex flex-col items-center w-full min-h-full py-4">
-            {/* Sections Bar */}
-            <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">
-                {sections.map(s => (
-                    <SectionTab 
-                        key={s.id} 
-                        section={s} 
-                        activeSection={activeSection} 
-                        setActiveSection={setActiveSection} 
-                        onLongPress={null} 
-                    />
-                ))}
-            </div>
-
-            {/* Wheel Container */}
-            <div className="relative w-80 h-80 shrink-0">
-                <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
-
-                <div 
-                    className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden"
-                    style={{
-                        transform: `rotate(${rotation}deg)`,
-                        transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)',
-                        background: `conic-gradient(
-                          ${Array.from({length: 16}).map((_, i) => 
-                            `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`
-                          ).join(', ')}
-                        )`
-                    }}
-                >
-                    {Array.from({length: 16}).map((_, i) => (
-                        <div 
-                            key={i}
-                            className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom"
-                            style={{
-                                transform: `rotate(${i * 22.5 + 11.25}deg)`, 
-                            }}
-                        >
-                            <span 
-                                className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl"
-                            >
-                                {i + 1}
-                            </span>
-                        </div>
-                    ))}
-                </div>
-
-                <button 
-                    onClick={handleSpin}
-                    disabled={isSpinning}
-                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-gold border-4 border-burgundy shadow-[0_0_20px_#FFD700] flex items-center justify-center z-10 active:scale-95 transition disabled:opacity-50 disabled:scale-100"
-                >
-                    <span className="text-burgundy font-black text-xl font-sans tracking-widest">SPIN</span>
-                </button>
-            </div>
-
-            {winner && (
-                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-                    <div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black">
-                        <button onClick={() => setWinner(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button>
-                        
-                        <div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center"> 
-                            {showHistory ? (
-                                <HistoryList cardId={winner.id} onClose={() => setShowHistory(false)}/>
-                            ) : (
-                                <img src={winner.filepath} alt="Winner" className="max-w-full max-h-full object-contain" />
-                            )}
-                        </div>
-
-                        <div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4">
-                            <h3 className="text-gold text-2xl font-caveat mb-2">The Wheel has Spoken!</h3>
-                            <button 
-                                onClick={() => setShowHistory(!showHistory)}
-                                className="flex items-center gap-2 text-white/50 text-sm hover:text-white transition"
-                            >
-                                <Heart size={16} className="fill-lipstick text-lipstick"/> 
-                                <span>Revealed {winner.scratched_count + 1} times</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
 const Home = () => {
   const [cards, setCards] = useState([]);
   const [sections, setSections] = useState([]);
@@ -1133,6 +1130,149 @@ const Home = () => {
   );
 };
 
+const Books = () => {
+  const [books, setBooks] = useState([]);
+  const [selectedBook, setSelectedBook] = useState(null);
+  const [menuTarget, setMenuTarget] = useState(null);
+  const [renameText, setRenameText] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
+
+  const loadBooks = async () => {
+    try {
+      const res = await fetch(`${API_URL}/books`, {
+         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) setBooks(await res.json());
+    } catch(e) { console.error(e); }
+  };
+
+  useEffect(() => {
+    loadBooks();
+    const interval = setInterval(loadBooks, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    for(const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        await fetch(`${API_URL}/books`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          body: formData
+        });
+    }
+    loadBooks();
+  };
+
+  const handleRename = async () => {
+    if (!menuTarget || !renameText.trim()) return;
+    await fetch(`${API_URL}/books/${menuTarget.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+      body: JSON.stringify({ title: renameText })
+    });
+    setMenuTarget(null);
+    setIsRenaming(false);
+    loadBooks();
+  };
+
+  const handleDelete = async () => {
+    if (!menuTarget) return;
+    await fetch(`${API_URL}/books/${menuTarget.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    setMenuTarget(null);
+    loadBooks();
+  };
+
+  const BookItem = ({ book }) => {
+    const longPressProps = useLongPress(() => {
+      setMenuTarget(book);
+      setRenameText(book.title);
+      setIsRenaming(false);
+    }, 800);
+
+    return (
+      <div 
+        {...longPressProps}
+        onClick={() => !menuTarget && setSelectedBook(book)}
+        className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md group select-none"
+      >
+        <Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/>
+        <div className="overflow-hidden">
+          <h3 className="text-xl text-white truncate w-full">{book.title}</h3>
+          <p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-6 pb-24 pt-4">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-3xl text-gold">Library</h2>
+        <label className="flex items-center gap-2 bg-burgundy px-4 py-2 rounded-full cursor-pointer hover:bg-lipstick">
+          <Upload size={18} className="text-white"/>
+          <span className="text-white text-sm">Add Books (PDF)</span>
+          <input type="file" className="hidden" accept="application/pdf" multiple onChange={handleUpload} />
+        </label>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {books.map(book => (
+          <BookItem key={book.id} book={book} />
+        ))}
+      </div>
+
+      {selectedBook && (
+        <PDFViewer 
+          url={selectedBook.filepath} 
+          title={selectedBook.title} 
+          bookId={selectedBook.id} // Added bookId prop
+          onClose={() => setSelectedBook(null)} 
+        />
+      )}
+
+      {menuTarget && (
+        <div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-72 text-center shadow-2xl">
+            <h3 className="text-gold text-xl mb-4 truncate">{menuTarget.title}</h3>
+            {isRenaming ? (
+              <div className="space-y-4">
+                <input 
+                  autoFocus
+                  className="w-full p-2 bg-black border border-gold rounded text-white"
+                  value={renameText}
+                  onChange={(e) => setRenameText(e.target.value)}
+                />
+                <div className="flex justify-center gap-2">
+                  <button onClick={() => setIsRenaming(false)} className="px-3 py-2 rounded bg-gray-700 text-white text-sm">Cancel</button>
+                  <button onClick={handleRename} className="px-3 py-2 rounded bg-gold text-black text-sm font-bold">Save</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <button onClick={() => setIsRenaming(true)} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-white w-full">
+                  <Edit2 size={18} /> Rename
+                </button>
+                <button onClick={handleDelete} className="flex items-center justify-center gap-2 p-3 rounded bg-red-900/50 hover:bg-red-900 text-white w-full">
+                  <Trash2 size={18} /> Delete
+                </button>
+                <button onClick={() => setMenuTarget(null)} className="p-2 mt-2 rounded text-gray-400 hover:text-white text-sm">
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Settings = ({ user, logout }) => {
   const [form, setForm] = useState({ ...user, password: '' });
 
@@ -1382,16 +1522,26 @@ const Layout = ({ children, user, logout }) => {
 
 export default function App() {
   const [user, setUser] = useState(null);
+
   useEffect(() => {
-    const saved = localStorage.getItem('user');
-    if (saved) setUser(JSON.parse(saved));
+    try {
+        const saved = localStorage.getItem('user');
+        if (saved) setUser(JSON.parse(saved));
+    } catch (e) {
+        console.error("Failed to parse user data, logging out.");
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+    }
   }, []);
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
   };
+
   if (!user) return <Auth setUser={setUser} />;
+
   return (
     <Router>
       <Layout user={user} logout={logout}>
