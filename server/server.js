@@ -11,7 +11,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
-const { exec } = require('child_process'); // For running pdfimages
+const { exec } = require('child_process'); 
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -70,7 +70,6 @@ db.serialize(() => {
         filepath TEXT
     )`);
 
-    // Settings table for Ntfy config
     db.run(`CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT
@@ -81,66 +80,42 @@ db.serialize(() => {
 const sendNtfy = (cardId) => {
     console.log(`[Ntfy] Starting notification for Card ID: ${cardId}`);
 
-    // 1. Get Settings
     db.all(`SELECT * FROM settings WHERE key IN ('ntfy_url', 'ntfy_topic')`, [], (err, rows) => {
         if (err || !rows) return;
         
         const settings = rows.reduce((acc, r) => ({...acc, [r.key]: r.value}), {});
+        
         if (!settings.ntfy_url || !settings.ntfy_topic) {
-            console.warn("[Ntfy] Aborted: URL or Topic not configured in settings.");
             return;
         }
 
-        // 2. Get Card Image Path
         db.get(`SELECT filepath FROM cards WHERE id = ?`, [cardId], (err, card) => {
-            if (err) {
-                console.error("[Ntfy] DB Error fetching card:", err.message);
-                return;
-            }
-            if (!card) {
-                console.error("[Ntfy] Card not found in DB.");
-                return;
-            }
+            if (!card) return;
 
-            // Construct absolute path to file
             const cleanPath = card.filepath.replace('/uploads/', '');
             const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
 
-            console.log(`[Ntfy] Resolving file path: ${absPath}`);
-
             if (fs.existsSync(absPath)) {
-                if (typeof fetch !== 'function') {
-                    console.error("[Ntfy] Error: Node.js environment missing 'fetch'. Upgrade Node?");
-                    return;
-                }
+                if (typeof fetch !== 'function') return;
 
                 try {
                     const fileBuffer = fs.readFileSync(absPath);
                     const { size } = fs.statSync(absPath);
                     const ext = path.extname(absPath) || '.jpg';
-                    
-                    // Generate Unique Filename to bust iOS cache
                     const timestamp = Date.now();
                     const filename = `card_${cardId}_${timestamp}${ext}`;
 
-                    // Determine correct MIME type
                     let contentType = 'application/octet-stream';
                     if (ext === '.png') contentType = 'image/png';
                     else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
-                    else if (ext === '.gif') contentType = 'image/gif';
                     
-                    // Construct URL
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
-                    
-                    // Use URL Query Parameters for metadata
                     const ntfyUrl = new URL(`${baseUrl}/${settings.ntfy_topic}`);
-                    ntfyUrl.searchParams.append('message', "Today's Position \uD83D\uDE09"); // 😉
+                    ntfyUrl.searchParams.append('message', "Today's Position \uD83D\uDE09"); 
                     ntfyUrl.searchParams.append('title', 'Privy: Card Revealed!');
                     ntfyUrl.searchParams.append('tags', 'heart,fire,camera');
                     ntfyUrl.searchParams.append('priority', 'high');
                     ntfyUrl.searchParams.append('filename', filename);
-
-                    console.log(`[Ntfy] Sending ${size} bytes to ${ntfyUrl.toString()} as ${filename} (${contentType})...`);
 
                     fetch(ntfyUrl.toString(), {
                         method: 'POST',
@@ -149,23 +124,11 @@ const sendNtfy = (cardId) => {
                             'Content-Length': size.toString(),
                             'Content-Type': contentType
                         }
-                    })
-                    .then(async res => {
-                        if (!res.ok) {
-                            const text = await res.text();
-                            console.error(`[Ntfy] Server responded with Error ${res.status}: ${text}`);
-                        } else {
-                            const json = await res.json();
-                            console.log("[Ntfy] Success!", json);
-                        }
-                    })
-                    .catch(err => console.error("[Ntfy] Network Request Failed:", err.message));
+                    }).catch(err => console.error("Ntfy Error:", err.message));
 
                 } catch (readErr) {
-                    console.error("[Ntfy] File Read Error:", readErr.message);
+                    console.error("File Read Error:", readErr.message);
                 }
-            } else {
-                console.error(`[Ntfy] File missing on disk at: ${absPath}`);
             }
         });
     });
@@ -186,7 +149,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// --- Helpers ---
 const auth = (req, res, next) => {
     const token = req.headers['authorization'];
     if (!token) return res.status(403).json({ error: 'No token' });
@@ -197,7 +159,7 @@ const auth = (req, res, next) => {
     } catch (e) { res.status(401).json({ error: 'Unauthorized' }); }
 };
 
-// --- Routes: Auth ---
+// --- Routes ---
 app.post('/api/register', (req, res) => {
     const { username, password, name, age, gender } = req.body;
     const hash = bcrypt.hashSync(password, 8);
@@ -234,7 +196,6 @@ app.put('/api/user', auth, (req, res) => {
     });
 });
 
-// --- Routes: Settings ---
 app.get('/api/settings', auth, (req, res) => {
     db.all(`SELECT * FROM settings`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -254,36 +215,27 @@ app.put('/api/settings', auth, (req, res) => {
     });
 });
 
-// TEST Endpoint for Notifications
 app.post('/api/settings/test', auth, (req, res) => {
     const { ntfy_url, ntfy_topic } = req.body;
-    
-    if (!ntfy_url || !ntfy_topic) {
-        return res.status(400).json({ error: 'Missing Ntfy configuration details' });
-    }
+    if (!ntfy_url || !ntfy_topic) return res.status(400).json({ error: 'Missing Ntfy config' });
 
     const baseUrl = ntfy_url.replace(/\/$/, '');
     const url = `${baseUrl}/${ntfy_topic}`;
 
-    if (typeof fetch !== 'function') return res.status(500).json({error: 'Server fetch support missing'});
+    if (typeof fetch !== 'function') return res.status(500).json({error: 'Fetch missing'});
 
     fetch(url, {
         method: 'POST',
         body: "Privy Notification Test Successful! 🎉",
-        headers: {
-            'Title': 'Privy Test',
-            'Tags': 'tada,check_mark',
-            'Priority': 'default'
-        }
+        headers: { 'Title': 'Privy Test', 'Tags': 'tada,check_mark' }
     })
     .then(response => {
         if (response.ok) res.json({ success: true });
-        else res.status(500).json({ error: `Ntfy Error: ${response.status} ${response.statusText}` });
+        else res.status(500).json({ error: `Ntfy Error: ${response.status}` });
     })
     .catch(err => res.status(500).json({ error: err.message }));
 });
 
-// --- Routes: Sections ---
 app.get('/api/sections', auth, (req, res) => {
     db.all(`SELECT * FROM sections`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -329,7 +281,6 @@ app.delete('/api/sections/:id', auth, (req, res) => {
     });
 });
 
-// --- Routes: Cards ---
 app.get('/api/cards', auth, (req, res) => {
     db.all(`SELECT * FROM cards`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -371,10 +322,7 @@ app.post('/api/cards/:id/scratch', auth, (req, res) => {
         db.run(`INSERT INTO card_history (card_id) VALUES (?)`, [cardId]);
         db.run(`UPDATE cards SET scratched_count = scratched_count + 1 WHERE id = ?`, [cardId], (err) => {
             if (err) return res.status(500).json({ error: err.message });
-            
-            // Trigger Notification with image
             sendNtfy(cardId);
-            
             res.json({ success: true });
         });
     });
@@ -389,9 +337,7 @@ app.get('/api/cards/:id/history', auth, (req, res) => {
 
 app.post('/api/reset-app', auth, (req, res) => {
     db.serialize(() => {
-        // Clear history logs
         db.run(`DELETE FROM card_history`);
-        // Reset counts
         db.run(`UPDATE cards SET scratched_count = 0`, (err) => {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: true });
@@ -399,7 +345,6 @@ app.post('/api/reset-app', auth, (req, res) => {
     });
 });
 
-// --- Routes: Books ---
 app.get('/api/books', auth, (req, res) => {
     db.all(`SELECT * FROM books`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -442,8 +387,11 @@ app.delete('/api/books/:id', auth, (req, res) => {
 // --- Route: Extract Images from PDF ---
 app.post('/api/books/:id/extract', auth, (req, res) => {
     const bookId = req.params.id;
+    console.log(`[Extract] Start for book: ${bookId}`);
     
-    // 1. Get Book Info
+    // Set a long timeout for the request to avoid frontend hanging (20 minutes)
+    req.setTimeout(1200000);
+
     db.get(`SELECT * FROM books WHERE id = ?`, [bookId], (err, book) => {
         if (err || !book) return res.status(404).json({ error: 'Book not found' });
 
@@ -452,51 +400,51 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
         
         if (!fs.existsSync(absBookPath)) return res.status(404).json({ error: 'File missing' });
 
-        // 2. Create Section
         const sectionTitle = `From: ${book.title}`;
         db.run(`INSERT INTO sections (title) VALUES (?)`, [sectionTitle], function(err) {
             if (err) return res.status(500).json({ error: 'Failed to create section' });
             
             const sectionId = this.lastID;
-            
-            // 3. Create Temp Dir for Extraction
             const tempDir = path.join(DATA_DIR, 'uploads', 'temp_' + Date.now());
             fs.mkdirSync(tempDir);
 
-            // 4. Run pdfimages to extract PNGs
-            // -png: Output png files
+            // -png: Output png, -j: Output jpeg (smaller size usually)
+            // Use JPEG for efficiency if file size is an issue, but user asked for extraction.
             const cmd = `pdfimages -png "${absBookPath}" "${tempDir}/img"`;
+            console.log(`[Extract] Running command: ${cmd}`);
             
-            exec(cmd, (error, stdout, stderr) => {
+            // FIX: Increase buffer size to 100MB and timeout to 10 minutes
+            exec(cmd, { maxBuffer: 1024 * 1024 * 100, timeout: 600000 }, (error, stdout, stderr) => {
                 if (error) {
-                    console.error("PDF Extract Error:", error);
-                    // Cleanup
+                    console.error("[Extract] CLI Error:", error);
                     fs.rmSync(tempDir, { recursive: true, force: true });
-                    return res.status(500).json({ error: 'Extraction failed' });
+                    return res.status(500).json({ error: 'Extraction failed/timed out' });
                 }
 
-                // 5. Process Extracted Files
                 fs.readdir(tempDir, (err, files) => {
-                    if (err) return res.status(500).json({ error: 'Read dir failed' });
+                    if (err) {
+                        fs.rmSync(tempDir, { recursive: true, force: true });
+                        return res.status(500).json({ error: 'Read dir failed' });
+                    }
+
+                    console.log(`[Extract] Processing ${files.length} extracted files...`);
 
                     const cardPromises = files.map(file => {
                         return new Promise((resolve) => {
                             const tempFilePath = path.join(tempDir, file);
-                            
-                            // Check size (Filter small junk images < 50KB)
                             const stats = fs.statSync(tempFilePath);
-                            if (stats.size < 50 * 1024) { // 50KB
+                            
+                            // Filter tiny images (< 50KB)
+                            if (stats.size < 50 * 1024) { 
                                 fs.unlinkSync(tempFilePath);
                                 resolve(null);
                                 return;
                             }
 
-                            // Move to cards folder
                             const newFilename = `${Date.now()}_${file}`;
                             const newPath = path.join(DATA_DIR, 'uploads', 'cards', newFilename);
                             fs.renameSync(tempFilePath, newPath);
 
-                            // Add to DB
                             const dbPath = `/uploads/cards/${newFilename}`;
                             db.run(`INSERT INTO cards (filepath, section_id) VALUES (?, ?)`, [dbPath, sectionId], function() {
                                 resolve(this.lastID);
@@ -505,8 +453,8 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
                     });
 
                     Promise.all(cardPromises).then(() => {
-                        // Cleanup Temp Dir
                         fs.rmSync(tempDir, { recursive: true, force: true });
+                        console.log(`[Extract] Completed. Added images to section ${sectionId}.`);
                         res.json({ success: true, sectionId, message: 'Images extracted successfully' });
                     });
                 });
