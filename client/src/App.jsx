@@ -1,27 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, PenTool } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, Download } from 'lucide-react';
 
 const API_URL = '/api';
-
-// --- Custom Icons ---
-const VibratorIcon = ({ size=24, className }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
-        <path d="M12 22v-6"/>
-        <path d="M9 16a3 3 0 0 1 6 0"/>
-        <path d="M7 10l-2 2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l-2-2"/>
-    </svg>
-);
-
-const BikiniIcon = ({ size=24, className }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <path d="M6 5l-2 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2l-2-5z"/>
-        <path d="M18 5l-2 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2l-2-5z"/>
-        <path d="M4 14l2 6h12l2-6"/>
-        <path d="M12 14v6"/>
-    </svg>
-);
 
 // --- Error Boundary ---
 class ErrorBoundary extends React.Component {
@@ -81,18 +62,15 @@ const initAudio = () => {
     }
     return audioCtx;
 };
-
 const playSound = (type) => {
     try {
         const ctx = initAudio();
         if (!ctx) return;
-        
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
         const now = ctx.currentTime;
-
         if (type === 'ting') {
             osc.type = 'sine';
             osc.frequency.setValueAtTime(800, now);
@@ -120,7 +98,7 @@ const playSound = (type) => {
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Global Sub-Components ---
+// --- Top-Level Components ---
 
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
@@ -162,10 +140,7 @@ const HistoryList = ({ cardId, onClose }) => {
   const formatTime = (ts) => { try { const date = new Date(ts.endsWith('Z') ? ts : ts + 'Z'); if (isNaN(date.getTime())) return "--:--"; return date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); } catch { return "--:--"; } };
   return (
     <div className="w-full h-full bg-gray-900 p-4 overflow-y-auto animate-fadeIn">
-       <div className="flex justify-between items-center mb-4 border-b border-gold/30 pb-2">
-         <h3 className="text-gold text-xl flex items-center gap-2"><Clock size={18}/> History</h3>
-         <button onClick={onClose} className="p-1 rounded-full hover:bg-white/10 text-gold"><X size={24}/></button>
-       </div>
+       <div className="flex justify-between items-center mb-4 border-b border-gold/30 pb-2"><h3 className="text-gold text-xl flex items-center gap-2"><Clock size={18}/> History</h3></div>
        {loading ? <p className="text-gray-400">Loading...</p> : history.length === 0 ? <p className="text-gray-400 text-center mt-10">No history yet.</p> : (
          <ul className="space-y-3">{history.map((h, i) => (<li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm"><span className="text-white flex items-center gap-2"><Calendar size={14} className="text-burgundy"/> {formatDate(h.timestamp)}</span><span className="text-gold font-mono">{formatTime(h.timestamp)}</span></li>))}</ul>
        )}
@@ -193,7 +168,7 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
       <div className="flex justify-between items-center px-4 pb-4 pt-12 bg-gray-900 border-b border-gold/20 safe-top">
         <div className="flex flex-col max-w-[60%]"><h3 className="text-gold text-xl truncate">{title}</h3>{isExtracting && <span className="text-xs text-gold/80 animate-pulse">{progressText}</span>}</div>
         <div className="flex gap-4 items-center">
-            <button onClick={handleExtract} disabled={isExtracting} className={`p-2 rounded-full text-white shadow-lg transition ${isExtracting ? 'bg-gray-700 cursor-wait' : 'bg-blue-600 hover:bg-blue-500'}`} title="Extract Images"><RefreshCw className={isExtracting ? "animate-spin" : ""} size={24}/></button>
+            <button onClick={handleExtract} disabled={isExtracting} className={`p-2 rounded-full text-white shadow-lg transition ${isExtracting ? 'bg-gray-700 cursor-wait' : 'bg-blue-600 hover:bg-blue-500'}`}><RefreshCw className={isExtracting ? "animate-spin" : ""} size={24}/></button>
             <button onClick={onClose} className="p-2 bg-burgundy rounded-full text-white hover:bg-lipstick shadow-lg"><X size={24}/></button>
         </div>
       </div>
@@ -281,7 +256,6 @@ const Auth = ({ setUser }) => {
   );
 };
 
-// Generic Gallery Component for Toys/Lingerie/Protection
 const Gallery = ({ title, endpoint, icon }) => {
     const [items, setItems] = useState([]);
     const [winner, setWinner] = useState(null);
@@ -313,7 +287,6 @@ const Gallery = ({ title, endpoint, icon }) => {
         if(items.length === 0) return alert("Upload images first!");
         setIsDrawing(true);
         setWinner(null);
-        
         let counter = 0;
         const interval = setInterval(() => {
             setWinner(items[Math.floor(Math.random() * items.length)]);
@@ -336,10 +309,8 @@ const Gallery = ({ title, endpoint, icon }) => {
     };
 
     return (
-        <div className="p-4 pb-24 flex flex-col items-center min-h-screen">
+        <div className="p-4 pb-24 flex flex-col items-center min-h-screen w-full">
             <h2 className="text-gold text-3xl mb-6 flex items-center gap-2 w-full justify-start">{icon} {title}</h2>
-            
-            {/* Display Area */}
             {winner ? (
                  <div className="relative w-full max-w-sm aspect-[3/4] border-4 border-gold rounded-xl overflow-hidden shadow-2xl mb-8 animate-fadeIn">
                      <img src={winner.filepath} className="w-full h-full object-cover" />
@@ -347,40 +318,20 @@ const Gallery = ({ title, endpoint, icon }) => {
                      {!isDrawing && <button onClick={() => setWinner(null)} className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-full"><X/></button>}
                  </div>
             ) : (
-                <button 
-                    onClick={handleDraw} 
-                    disabled={isDrawing || items.length === 0}
-                    className="w-full max-w-sm aspect-video bg-gray-900 border-2 border-dashed border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-500 mb-8 hover:border-gold hover:text-gold transition active:scale-95"
-                >
+                <button onClick={handleDraw} disabled={isDrawing || items.length === 0} className="w-full max-w-sm aspect-video bg-gray-900 border-2 border-dashed border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-500 mb-8 hover:border-gold hover:text-gold transition active:scale-95">
                     {isDrawing ? <RefreshCw className="animate-spin mb-2" size={40}/> : <Shuffle className="mb-2" size={40}/>}
                     <span className="text-xl font-bold">{items.length > 0 ? "TAP TO DRAW" : "Empty Collection"}</span>
                 </button>
             )}
-
-            {/* Controls */}
             <div className="w-full flex justify-end mb-4">
-                <button 
-                    onClick={() => setIsEditing(!isEditing)} 
-                    className={`flex items-center gap-2 px-4 py-2 rounded-full border transition ${isEditing ? 'bg-gold text-black border-gold' : 'bg-transparent text-gray-400 border-gray-700'}`}
-                >
-                    <Edit2 size={16}/> {isEditing ? 'Done' : 'Manage'}
-                </button>
+                <button onClick={() => setIsEditing(!isEditing)} className={`flex items-center gap-2 px-4 py-2 rounded-full border transition ${isEditing ? 'bg-gold text-black border-gold' : 'bg-transparent text-gray-400 border-gray-700'}`}><Edit2 size={16}/> {isEditing ? 'Done' : 'Manage'}</button>
             </div>
-
-            {/* Grid (Only visible in Edit Mode) */}
             {isEditing && (
                 <div className="w-full grid grid-cols-3 gap-2 animate-fadeIn">
-                    <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40">
-                        <Plus className="text-burgundy"/>
-                        <span className="text-xs text-burgundy mt-1">Add</span>
-                        <input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} />
-                    </label>
-                    {items.map(item => (
-                        <GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />
-                    ))}
+                    <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40"><Plus className="text-burgundy"/><span className="text-xs text-burgundy mt-1">Add</span><input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} /></label>
+                    {items.map(item => (<GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />))}
                 </div>
             )}
-
             {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Item?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
         </div>
     );
@@ -389,16 +340,12 @@ const Gallery = ({ title, endpoint, icon }) => {
 const Protection = () => {
     const [tab, setTab] = useState('condoms');
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full w-full">
             <div className="flex justify-center gap-4 p-4">
                 <button onClick={() => setTab('condoms')} className={`px-6 py-2 rounded-full border ${tab === 'condoms' ? 'bg-gold text-black border-gold' : 'text-gray-500 border-gray-700'}`}>Condoms</button>
                 <button onClick={() => setTab('lubes')} className={`px-6 py-2 rounded-full border ${tab === 'lubes' ? 'bg-gold text-black border-gold' : 'text-gray-500 border-gray-700'}`}>Lubes</button>
             </div>
-            {tab === 'condoms' ? (
-                <Gallery title="Condoms" endpoint="condoms" icon={<Shield size={32} className="text-blue-400"/>} />
-            ) : (
-                <Gallery title="Lubes" endpoint="lubes" icon={<Folder size={32} className="text-pink-400"/>} />
-            )}
+            {tab === 'condoms' ? (<Gallery title="Condoms" endpoint="condoms" icon={<Shield size={32} className="text-blue-400"/>} />) : (<Gallery title="Lubes" endpoint="lubes" icon={<Folder size={32} className="text-pink-400"/>} />)}
         </div>
     );
 };
@@ -411,57 +358,15 @@ const Spin = () => {
     const [isSpinning, setIsSpinning] = useState(false);
     const [winner, setWinner] = useState(null); 
     const [showHistory, setShowHistory] = useState(false);
-
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const token = localStorage.getItem('token');
-                const [cRes, sRes] = await Promise.all([ fetch(`${API_URL}/cards`, { headers: { Authorization: `Bearer ${token}` } }), fetch(`${API_URL}/sections`, { headers: { Authorization: `Bearer ${token}` } }) ]);
-                if (cRes.ok && sRes.ok) {
-                    const cData = await cRes.json();
-                    const sData = await sRes.json();
-                    if(Array.isArray(cData)) setCards(cData);
-                    if(Array.isArray(sData)) setSections(sData);
-                }
-            } catch(e) {}
-        };
-        fetchData();
-    }, []);
-
+    useEffect(() => { const fetchData = async () => { try { const token = localStorage.getItem('token'); const [cRes, sRes] = await Promise.all([ fetch(`${API_URL}/cards`, { headers: { Authorization: `Bearer ${token}` } }), fetch(`${API_URL}/sections`, { headers: { Authorization: `Bearer ${token}` } }) ]); if (cRes.ok && sRes.ok) { const cData = await cRes.json(); const sData = await sRes.json(); if(Array.isArray(cData)) setCards(cData); if(Array.isArray(sData)) setSections(sData); } } catch(e) {} }; fetchData(); }, []);
     const wheelGradient = `conic-gradient(${Array.from({length: 16}).map((_, i) => `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`).join(', ')})`;
-
-    const handleSpin = () => {
-        if (isSpinning) return;
-        const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; });
-        if (pool.length === 0) { alert("No cards in this section!"); return; }
-        setIsSpinning(true); setWinner(null);
-        
-        const winningIndex = Math.floor(Math.random() * 16);
-        const winningCard = pool[Math.floor(Math.random() * pool.length)]; 
-        
-        const segmentAngle = 360 / 16; 
-        const offset = (winningIndex * segmentAngle) + (segmentAngle / 2);
-        const target = 360 - offset; 
-        let delta = target - (rotation % 360);
-        if (delta < 0) delta += 360;
-        const totalRotation = rotation + (5 * 360) + delta;
-        setRotation(totalRotation);
-
-        setTimeout(() => {
-            setIsSpinning(false);
-            setWinner(winningCard);
-            fetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
-        }, 4000);
-    };
-
+    const handleSpin = () => { if (isSpinning) return; const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; }); if (pool.length === 0) { alert("No cards in this section!"); return; } setIsSpinning(true); setWinner(null); const winningIndex = Math.floor(Math.random() * 16); const winningCard = pool[Math.floor(Math.random() * pool.length)]; const segmentAngle = 360 / 16; const offset = (winningIndex * segmentAngle) + (segmentAngle / 2); const target = 360 - offset; let delta = target - (rotation % 360); if (delta < 0) delta += 360; const totalRotation = rotation + (5 * 360) + delta; setRotation(totalRotation); setTimeout(() => { setIsSpinning(false); setWinner(winningCard); fetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000); };
     return (
         <div className="flex flex-col items-center w-full min-h-full py-4">
             <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">{sections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={null} />))}</div>
             <div className="relative w-80 h-80 shrink-0">
                 <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
-                <div className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden" style={{ transform: `rotate(${rotation}deg)`, transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)', background: wheelGradient }}>
-                    {Array.from({length: 16}).map((_, i) => (<div key={i} className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom" style={{ transform: `rotate(${i * 22.5 + 11.25}deg)` }}><span className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl">{i + 1}</span></div>))}
-                </div>
+                <div className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden" style={{ transform: `rotate(${rotation}deg)`, transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)', background: wheelGradient }}>{Array.from({length: 16}).map((_, i) => (<div key={i} className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom" style={{ transform: `rotate(${i * 22.5 + 11.25}deg)` }}><span className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl">{i + 1}</span></div>))}</div>
                 <button onClick={handleSpin} disabled={isSpinning} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-gold border-4 border-burgundy shadow-lg flex items-center justify-center z-10 active:scale-95 transition"><span className="text-burgundy font-black text-xl font-sans tracking-widest">SPIN</span></button>
             </div>
             {winner && (<div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"><div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden bg-black"><button onClick={() => setWinner(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full"><X size={24}/></button><div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center">{showHistory ? (<HistoryList cardId={winner.id} onClose={() => setShowHistory(false)}/>) : (<img src={winner.filepath} alt="Winner" className="max-w-full max-h-full object-contain"/>)}</div><div className="h-[20%] flex flex-col items-center justify-center p-4"><h3 className="text-gold text-2xl font-caveat mb-2">The Wheel has Spoken!</h3><button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-white/50 text-sm hover:text-white"><Heart size={16} className="fill-lipstick text-lipstick"/><span>Revealed {winner.scratched_count + 1} times</span></button></div></div></div>)}
@@ -479,61 +384,16 @@ const DiceGame = () => {
     const [timeLeft, setTimeLeft] = useState(0);
     const [isEditing, setIsEditing] = useState(false);
     const [activeRole, setActiveRole] = useState('wife');
-
     const [allOptions, setAllOptions] = useState([]);
 
-    useEffect(() => {
-        fetch(`${API_URL}/dice`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
-            .then(res => res.json())
-            .then(data => { if(Array.isArray(data)) setAllOptions(data); })
-            .catch(console.error);
-    }, []);
-
-    useEffect(() => {
-        const roleActs = allOptions.filter(d => d.type === 'act' && (d.role === activeRole || (!d.role && activeRole === 'wife'))); 
-        const roleLocs = allOptions.filter(d => d.type === 'location' && (d.role === activeRole || (!d.role && activeRole === 'wife')));
-        setActs(roleActs);
-        setLocations(roleLocs);
-    }, [allOptions, activeRole]);
-
-    const generateTime = () => {
-        const standard = [10, 15, 30, 45, 60];
-        const pool = [...standard, ...standard, ...standard, '∞']; 
-        return pool[Math.floor(Math.random() * pool.length)];
-    };
-
-    const handleRoll = () => {
-        if (rolling) return;
-        setRolling(true); setTimerActive(false); setTimerPaused(false); setResult({ act: '?', loc: '?', time: '?' }); 
-        let steps = 0;
-        const interval = setInterval(() => {
-            const randomAct = acts.length ? acts[Math.floor(Math.random() * acts.length)].text : '?';
-            const randomLoc = locations.length ? locations[Math.floor(Math.random() * locations.length)].text : '?';
-            const randomTime = generateTime();
-            setResult({ act: randomAct, loc: randomLoc, time: randomTime });
-            steps++;
-            if (steps > 20) { clearInterval(interval); setRolling(false); }
-        }, 100);
-    };
-
-    const startTimer = () => { 
-        if (result.time === '?' || result.time === '∞') return; 
-        initAudio(); // Wake up audio context on click
-        if (!timerActive) playSound('ting'); 
-        if (!timerPaused && !timerActive) setTimeLeft(parseInt(result.time)); 
-        setTimerActive(true); 
-        setTimerPaused(false); 
-    };
-    
+    useEffect(() => { fetch(`${API_URL}/dice`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setAllOptions(data); }).catch(console.error); }, []);
+    useEffect(() => { const roleActs = allOptions.filter(d => d.type === 'act' && (d.role === activeRole || (!d.role && activeRole === 'wife'))); const roleLocs = allOptions.filter(d => d.type === 'location' && (d.role === activeRole || (!d.role && activeRole === 'wife'))); setActs(roleActs); setLocations(roleLocs); }, [allOptions, activeRole]);
+    const generateTime = () => { const standard = [10, 15, 30, 45, 60]; const pool = [...standard, ...standard, ...standard, '∞']; return pool[Math.floor(Math.random() * pool.length)]; };
+    const handleRoll = () => { if (rolling) return; setRolling(true); setTimerActive(false); setTimerPaused(false); setResult({ act: '?', loc: '?', time: '?' }); let steps = 0; const interval = setInterval(() => { const randomAct = acts.length ? acts[Math.floor(Math.random() * acts.length)].text : '?'; const randomLoc = locations.length ? locations[Math.floor(Math.random() * locations.length)].text : '?'; const randomTime = generateTime(); setResult({ act: randomAct, loc: randomLoc, time: randomTime }); steps++; if (steps > 20) { clearInterval(interval); setRolling(false); } }, 100); };
+    const startTimer = () => { if (result.time === '?' || result.time === '∞') return; initAudio(); if (!timerActive) playSound('ting'); if (!timerPaused && !timerActive) setTimeLeft(parseInt(result.time)); setTimerActive(true); setTimerPaused(false); };
     const pauseTimer = () => { setTimerPaused(true); setTimerActive(false); };
     const stopTimer = () => { setTimerActive(false); setTimerPaused(false); setTimeLeft(0); };
-
-    useEffect(() => {
-        let interval = null;
-        if (timerActive && !timerPaused && timeLeft > 0) interval = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
-        else if (timerActive && timeLeft === 0) { playSound('end'); setTimerActive(false); }
-        return () => clearInterval(interval);
-    }, [timerActive, timerPaused, timeLeft]);
+    useEffect(() => { let interval = null; if (timerActive && !timerPaused && timeLeft > 0) interval = setInterval(() => setTimeLeft(prev => prev - 1), 1000); else if (timerActive && timeLeft === 0) { playSound('end'); setTimerActive(false); } return () => clearInterval(interval); }, [timerActive, timerPaused, timeLeft]);
 
     if (isEditing) {
         return (
@@ -559,17 +419,8 @@ const DiceGame = () => {
                 <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-2xl leading-tight">{result.loc}</span></div>
                 <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-3xl">{result.time === '∞' ? '∞' : (result.time === '?' ? '?' : result.time + 's')}</span></div>
             </div>
-            
-            {(!rolling && result.act !== '?' && result.loc !== '?') && (
-                <div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn w-full">
-                    <p className="text-white text-3xl font-caveat font-bold leading-relaxed">
-                        <span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span> {result.time === '∞' ? " until asked to stop." : ` for ${result.time} seconds.`}
-                    </p>
-                </div>
-            )}
-
+            {(!rolling && result.act !== '?' && result.loc !== '?') && (<div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn w-full"><p className="text-white text-3xl font-caveat font-bold leading-relaxed"><span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span> {result.time === '∞' ? " until asked to stop." : ` for ${result.time} seconds.`}</p></div>)}
             {(timerActive || timerPaused) && (<div className="text-red-500 font-mono text-7xl font-bold animate-pulse my-4">{timeLeft}</div>)}
-            
             <div className="h-20 flex items-center justify-center w-full gap-6">{!rolling && result.time !== '?' && result.time !== '∞' && (<>{timerActive ? (<button onClick={pauseTimer} className="w-16 h-16 rounded-full bg-yellow-600 flex items-center justify-center shadow-lg"><Pause fill="white" size={32} /></button>) : (<button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>)}{(timerActive || timerPaused) && (<button onClick={stopTimer} className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg"><Square fill="white" size={28} /></button>)}</>)}</div>
             <button onClick={handleRoll} disabled={rolling || timerActive} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50">ROLL</button>
             <button onClick={() => setIsEditing(true)} className="text-gray-500 flex items-center gap-2 mt-4"><Edit2 size={16} /> Edit Dice ({activeRole})</button>
@@ -577,23 +428,16 @@ const DiceGame = () => {
     );
 };
 
-// 6. Extras Tab (Locations + Jar)
 const LocationUnlocks = () => {
     const [locations, setLocations] = useState([]);
     const [newLoc, setNewLoc] = useState("");
     const [menuTarget, setMenuTarget] = useState(null);
-
-    const fetchLocs = () => {
-        fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setLocations(data); }).catch(console.error);
-    };
-
+    const fetchLocs = () => { fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setLocations(data); }).catch(console.error); };
     useEffect(() => { fetchLocs(); }, []);
-
     const toggleLoc = async (id) => { await fetch(`${API_URL}/locations/${id}/toggle`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ increment: true }) }); fetchLocs(); };
     const addLoc = async () => { if(!newLoc) return; const res = await fetch(`${API_URL}/locations`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ name: newLoc }) }); if(res.ok) { fetchLocs(); setNewLoc(""); } };
     const deleteLoc = async () => { if(!menuTarget) return; await fetch(`${API_URL}/locations/${menuTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
     const resetLoc = async () => { if(!menuTarget) return; await fetch(`${API_URL}/locations/${menuTarget.id}/reset`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
-
     return (
         <div>
             <h2 className="text-gold text-3xl mb-6 flex items-center gap-2"><MapPin/> Locations</h2>
@@ -610,10 +454,7 @@ const FantasyJar = () => {
     const [unpulledCount, setUnpulledCount] = useState(0); 
     const [history, setHistory] = useState([]);
     const [deleteTarget, setDeleteTarget] = useState(null);
-    const fetchData = () => {
-        fetch(`${API_URL}/fantasies`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setUnpulledCount(data.length); });
-        fetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setHistory(data); });
-    };
+    const fetchData = () => { fetch(`${API_URL}/fantasies`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setUnpulledCount(data.length); }); fetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setHistory(data); }); };
     useEffect(() => { fetchData(); }, []);
     const handleDrop = async () => { if(!wish.trim()) return; await fetch(`${API_URL}/fantasies`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ text: wish }) }); setWish(""); alert("Wish dropped in the jar! 🤫"); fetchData(); };
     const handlePull = async () => { const res = await fetch(`${API_URL}/fantasies/pull`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); const data = await res.json(); if(data.empty) { alert("The jar is empty! Add more fantasies."); } else { setPulled(data.text); fetchData(); } };
@@ -728,16 +569,17 @@ const Layout = ({ children, user, logout }) => {
   const [resetInput, setResetInput] = useState("");
   const handleReload = async () => { if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (const registration of registrations) await registration.unregister(); } window.location.reload(true); };
   const handleResetSubmit = async () => { if (resetInput !== 'RESET') { alert("Please type 'RESET' exactly."); return; } if (resetStep === 1) { setResetStep(2); setResetInput(""); } else { await fetch(`${API_URL}/reset-app`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); alert("App has been reset."); setShowResetModal(false); setResetStep(1); setResetInput(""); handleReload(); } };
+  const handleExport = async () => { window.open(`${API_URL}/export?token=${localStorage.getItem('token')}`, '_blank'); };
+  
   return (
     <div className="fixed inset-0 w-full h-full bg-black text-white font-caveat selection:bg-lipstick flex flex-col overflow-hidden">
       <header className="flex-none w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-2 flex justify-between items-center shadow-lg"><div className="flex items-center gap-3"><img src="/apple-touch-icon.png" alt="Logo" className="w-10 h-10 rounded-full border border-gold shadow-md" /><div className="flex flex-col"><h1 className="text-2xl text-gold tracking-widest leading-none">Privy</h1><span className="text-xl text-gray-400 -mt-1">@{user?.username}</span></div></div><div className="flex items-center gap-4"><button onClick={handleReload} className="text-gold/80 hover:text-gold focus:outline-none active:rotate-180 transition-transform duration-500"><RefreshCw size={24} /></button><button onClick={() => setMenuOpen(!menuOpen)} className="text-gold focus:outline-none">{menuOpen ? <X size={28} /> : <div className="space-y-1"><div className="w-6 h-0.5 bg-gold"></div><div className="w-6 h-0.5 bg-gold"></div><div className="w-6 h-0.5 bg-gold"></div></div>}</button></div></header>
-      {menuOpen && (<div className="absolute top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-50 p-4 shadow-2xl transform transition-transform"><div className="flex flex-col gap-4 text-xl"><Link to="/settings" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><User size={20}/> Profile</Link><Link to="/notifications" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><Bell size={20}/> Notifications</Link><div className="my-2 border-t border-gray-700"></div><button onClick={() => { setShowResetModal(true); setMenuOpen(false); }} className="flex items-center gap-3 p-2 text-red-400 hover:bg-white/10 rounded"><RotateCcw size={20}/> Reset App</button><button onClick={logout} className="flex items-center gap-3 p-2 text-lipstick hover:bg-white/10 rounded"><LogOut size={20}/> Logout</button></div></div>)}
+      {menuOpen && (<div className="absolute top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-50 p-4 shadow-2xl transform transition-transform"><div className="flex flex-col gap-4 text-xl"><Link to="/settings" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><User size={20}/> Profile</Link><Link to="/notifications" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><Bell size={20}/> Notifications</Link><button onClick={handleExport} className="flex items-center gap-3 p-2 text-gold hover:bg-white/10 rounded"><Download size={20}/> Export Data</button><div className="my-2 border-t border-gray-700"></div><button onClick={() => { setShowResetModal(true); setMenuOpen(false); }} className="flex items-center gap-3 p-2 text-red-400 hover:bg-white/10 rounded"><RotateCcw size={20}/> Reset App</button><button onClick={logout} className="flex items-center gap-3 p-2 text-lipstick hover:bg-white/10 rounded"><LogOut size={20}/> Logout</button></div></div>)}
       <main className="flex-1 overflow-y-auto bg-gradient-to-b from-black via-eggplant/20 to-black relative w-full">{children}</main>
       <nav className="flex-none w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50"><Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}><Layers size={24} /><span className="text-xs">Cards</span></Link><Link to="/spin" className={`flex flex-col items-center ${location.pathname === '/spin' ? 'text-lipstick' : 'text-gray-500'}`}><Aperture size={24} /><span className="text-xs">Spin</span></Link><Link to="/dice" className={`flex flex-col items-center ${location.pathname === '/dice' ? 'text-lipstick' : 'text-gray-500'}`}><Dices size={24} /><span className="text-xs">Dice</span></Link><Link to="/extras" className={`flex flex-col items-center ${location.pathname === '/extras' ? 'text-lipstick' : 'text-gray-500'}`}><Sparkles size={24} /><span className="text-xs">Extras</span></Link><Link to="/books" className={`flex flex-col items-center ${location.pathname === '/books' ? 'text-lipstick' : 'text-gray-500'}`}><Book size={24} /><span className="text-xs">Books</span></Link>
       <Link to="/toys" className={`flex flex-col items-center ${location.pathname === '/toys' ? 'text-lipstick' : 'text-gray-500'}`}><Zap size={24} /><span className="text-xs">Toys</span></Link>
       <Link to="/lingerie" className={`flex flex-col items-center ${location.pathname === '/lingerie' ? 'text-lipstick' : 'text-gray-500'}`}><Shirt size={24} /><span className="text-xs">Lingerie</span></Link>
-      <Link to="/protection" className={`flex flex-col items-center ${location.pathname === '/protection' ? 'text-lipstick' : 'text-gray-500'}`}><Shield size={24} /><span className="text-xs">Safety</span></Link>
-      </nav>
+      <Link to="/protection" className={`flex flex-col items-center ${location.pathname === '/protection' ? 'text-lipstick' : 'text-gray-500'}`}><Shield size={24} /><span className="text-xs">Safety</span></Link></nav>
       {showResetModal && (<div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"><div className="bg-gray-900 border border-red-500 p-6 rounded-xl w-80 text-center shadow-2xl"><AlertTriangle size={48} className="mx-auto text-red-500 mb-4" /><h3 className="text-white text-2xl mb-2 font-bold">App Reset</h3><p className="text-gray-400 text-sm mb-6">{resetStep === 1 ? "This will reset all scratch counts and history to zero. This cannot be undone." : "Are you really sure? This is your last chance."}</p><input className="w-full p-3 bg-black border border-gray-700 rounded text-white text-center tracking-widest mb-4 uppercase" placeholder="Type RESET" value={resetInput} onChange={e => setResetInput(e.target.value.toUpperCase())} /><div className="flex justify-center gap-4"><button onClick={() => { setShowResetModal(false); setResetStep(1); setResetInput(""); }} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleResetSubmit} className={`px-4 py-2 rounded font-bold text-white ${resetInput === 'RESET' ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 cursor-not-allowed'}`} disabled={resetInput !== 'RESET'}>{resetStep === 1 ? "Next Step" : "CONFIRM RESET"}</button></div></div></div>)}
     </div>
   );
@@ -753,8 +595,8 @@ export default function App() {
       <Route path="/dice" element={<DiceGame />} />
       <Route path="/extras" element={<Extras />} />
       <Route path="/books" element={<Books />} />
-      <Route path="/toys" element={<Gallery title="Toys" endpoint="toys" icon={<VibratorIcon size={32}/>} />} />
-      <Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<BikiniIcon size={32}/>} />} />
+      <Route path="/toys" element={<Gallery title="Toys" endpoint="toys" icon={<Zap size={32}/>} />} />
+      <Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<Shirt size={32}/>} />} />
       <Route path="/protection" element={<Protection />} />
       <Route path="/settings" element={<Settings user={user} logout={logout} />} />
       <Route path="/notifications" element={<Notifications />} />
