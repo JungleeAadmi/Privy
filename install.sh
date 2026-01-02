@@ -8,8 +8,8 @@ echo "🍷 Welcome to Privy Installer..."
 # 1. System Updates & Interactive Timezone
 echo "🔄 Updating system packages..."
 apt-get update && apt-get upgrade -y
-# Install dialog for UI and poppler-utils for PDF image extraction
-apt-get install -y dialog git poppler-utils
+# Install dialog (UI), git, poppler-utils (PDF extraction), and zip (Backup export)
+apt-get install -y dialog git poppler-utils zip
 
 echo "🌍 Setting Timezone..."
 if [ -c /dev/tty ]; then
@@ -29,13 +29,19 @@ APP_DIR="/opt/privy"
 DATA_DIR="$APP_DIR/data"
 mkdir -p "$DATA_DIR/uploads/cards"
 mkdir -p "$DATA_DIR/uploads/books"
+mkdir -p "$DATA_DIR/uploads/toys"
+mkdir -p "$DATA_DIR/uploads/lingerie"
+mkdir -p "$DATA_DIR/uploads/condoms"
+mkdir -p "$DATA_DIR/uploads/lubes"
 
 # 4. Handle File Retrieval
 echo "📂 Moving files to $APP_DIR..."
 
 if [ -f "server/server.js" ]; then
+    # Local install (if you cloned the repo manually)
     cp -r . "$APP_DIR/"
 else
+    # Remote install
     echo "📥 Downloading application files..."
     TEMP_DIR=$(mktemp -d)
     git clone https://github.com/JungleeAadmi/Privy.git "$TEMP_DIR"
