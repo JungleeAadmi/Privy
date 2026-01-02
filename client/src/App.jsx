@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
 import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square } from 'lucide-react';
 
@@ -11,7 +11,7 @@ class ErrorBoundary extends React.Component {
     this.state = { hasError: false, error: null };
   }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, errorInfo) { console.error("Crash:", error, errorInfo); }
+  componentDidCatch(error, errorInfo) { console.error("Uncaught error:", error, errorInfo); }
   handleReset() {
     localStorage.clear();
     if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
@@ -20,11 +20,11 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-gold p-6 text-center font-sans z-[9999]">
+        <div className="min-h-screen w-full flex flex-col items-center justify-center bg-gray-900 text-gold p-6 text-center font-sans z-[9999] relative">
           <AlertTriangle size={64} className="mb-4 text-red-500" />
           <h1 className="text-4xl mb-4 font-bold">App Crashed</h1>
-          <p className="text-sm mb-8 text-gray-300">{this.state.error?.message || "Unknown Error"}</p>
-          <button onClick={this.handleReset} className="px-6 py-3 bg-red-600 rounded-full text-white font-bold flex items-center gap-2"><RefreshCw size={20} /> Force Reset</button>
+          <p className="text-sm mb-8 text-gray-300 break-all">{this.state.error?.message || "Unknown Error"}</p>
+          <button onClick={this.handleReset} className="px-6 py-3 bg-red-600 rounded-full text-white font-bold shadow-lg flex items-center gap-2"><RefreshCw size={20} /> Force Reset</button>
         </div>
       );
     }
@@ -56,50 +56,42 @@ const playSound = (type) => {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (!AudioContext) return;
         const ctx = new AudioContext();
-        // Resume context if suspended (browser policy)
         if (ctx.state === 'suspended') ctx.resume();
-        
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
-        
-        const now = ctx.currentTime;
         if (type === 'ting') {
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, now);
-            osc.frequency.exponentialRampToValueAtTime(400, now + 0.5);
-            gain.gain.setValueAtTime(0.5, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
-            osc.start(now);
-            osc.stop(now + 0.5);
+            osc.frequency.setValueAtTime(800, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
+            gain.gain.setValueAtTime(0.5, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.5);
         } else if (type === 'end') {
-            const osc2 = ctx.createOscillator();
-            const gain2 = ctx.createGain();
-            osc2.connect(gain2);
-            gain2.connect(ctx.destination);
-            
-            osc.frequency.setValueAtTime(600, now);
-            gain.gain.setValueAtTime(0.5, now);
-            gain.gain.linearRampToValueAtTime(0, now + 0.2);
-            osc.start(now); osc.stop(now + 0.2);
-            
-            osc2.frequency.setValueAtTime(800, now + 0.25);
-            gain2.gain.setValueAtTime(0.5, now + 0.25);
-            gain2.gain.linearRampToValueAtTime(0, now + 0.5);
+            // Distinct Double Beep
+            const now = ctx.currentTime;
+            const osc1 = ctx.createOscillator(); const gain1 = ctx.createGain();
+            osc1.connect(gain1); gain1.connect(ctx.destination);
+            osc1.type = 'square'; osc1.frequency.setValueAtTime(600, now);
+            gain1.gain.setValueAtTime(0.5, now); gain1.gain.linearRampToValueAtTime(0, now + 0.2);
+            osc1.start(now); osc1.stop(now + 0.2);
+            const osc2 = ctx.createOscillator(); const gain2 = ctx.createGain();
+            osc2.connect(gain2); gain2.connect(ctx.destination);
+            osc2.type = 'square'; osc2.frequency.setValueAtTime(800, now + 0.25);
+            gain2.gain.setValueAtTime(0.5, now + 0.25); gain2.gain.linearRampToValueAtTime(0, now + 0.5);
             osc2.start(now + 0.25); osc2.stop(now + 0.5);
         }
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Top Level Components ---
-
+// --- Sub-Components (Defined globally) ---
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
   const tapTimer = useRef(null);
   useEffect(() => { setIsRevealed(false); tapCount.current = 0; }, [image]);
-  
   const handleInteraction = () => {
     if (tapTimer.current) clearTimeout(tapTimer.current);
     tapCount.current += 1;
@@ -108,7 +100,6 @@ const RevealCard = ({ image, id, onRevealComplete }) => {
       tapCount.current = 0;
     } else { tapTimer.current = setTimeout(() => { tapCount.current = 0; }, 400); }
   };
-
   return (
     <div className="relative w-full h-full bg-black select-none overflow-hidden flex items-center justify-center" onClick={handleInteraction}>
       <img src={image} alt="Secret" className="max-w-full max-h-full object-contain pointer-events-none" />
@@ -132,15 +123,13 @@ const HistoryList = ({ cardId, onClose }) => {
       .catch(() => { if(mounted) setLoading(false); });
     return () => { mounted = false; };
   }, [cardId]);
-  
+  const formatDate = (ts) => { try { const date = new Date(ts.endsWith('Z') ? ts : ts + 'Z'); if (isNaN(date.getTime())) return "Unknown Date"; return date.toLocaleDateString(); } catch { return "Error Date"; } };
+  const formatTime = (ts) => { try { const date = new Date(ts.endsWith('Z') ? ts : ts + 'Z'); if (isNaN(date.getTime())) return "--:--"; return date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); } catch { return "--:--"; } };
   return (
     <div className="w-full h-full bg-gray-900 p-4 overflow-y-auto animate-fadeIn">
        <div className="flex justify-between items-center mb-4 border-b border-gold/30 pb-2"><h3 className="text-gold text-xl flex items-center gap-2"><Clock size={18}/> History</h3></div>
        {loading ? <p className="text-gray-400">Loading...</p> : history.length === 0 ? <p className="text-gray-400 text-center mt-10">No history yet.</p> : (
-         <ul className="space-y-3">{history.map((h, i) => {
-             const d = new Date(h.timestamp.endsWith('Z') ? h.timestamp : h.timestamp + 'Z');
-             return (<li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm"><span className="text-white flex items-center gap-2"><Calendar size={14} className="text-burgundy"/> {d.toLocaleDateString()}</span><span className="text-gold font-mono">{d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></li>)
-         })}</ul>
+         <ul className="space-y-3">{history.map((h, i) => (<li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm"><span className="text-white flex items-center gap-2"><Calendar size={14} className="text-burgundy"/> {formatDate(h.timestamp)}</span><span className="text-gold font-mono">{formatTime(h.timestamp)}</span></li>))}</ul>
        )}
     </div>
   );
@@ -152,14 +141,14 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   const handleExtract = async () => {
     if (!confirm("Extract all images from this book into a new card section?")) return;
     setIsExtracting(true); setProgressText("Initializing...");
-    const intervals = [setTimeout(() => setProgressText("Scanning..."), 2000), setTimeout(() => setProgressText("Extracting..."), 5000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
+    const intervals = [setTimeout(() => setProgressText("Scanning PDF pages..."), 2000), setTimeout(() => setProgressText("Extracting raw images..."), 5000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
     try {
         const res = await fetch(`${API_URL}/books/${bookId}/extract`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
         const data = await res.json();
         intervals.forEach(clearTimeout);
-        if (res.ok) { setProgressText("Done!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); }, 500); } 
-        else { alert(`Error: ${data.error}`); setIsExtracting(false); }
-    } catch { intervals.forEach(clearTimeout); alert("Failed."); setIsExtracting(false); }
+        if (res.ok) { setProgressText("Extraction Complete!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); setProgressText(""); }, 500); } 
+        else { alert(`Error: ${data.error}`); setIsExtracting(false); setProgressText(""); }
+    } catch { intervals.forEach(clearTimeout); alert("Extraction failed. Check network or server."); setIsExtracting(false); setProgressText(""); }
   };
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
@@ -193,19 +182,21 @@ const CardItem = ({ card, onDeleteRequest, onClick }) => {
 
 const LocationItem = ({ loc, onToggle, onDeleteRequest }) => {
     const longPressProps = useLongPress(() => onDeleteRequest(loc), 800);
+    const unlockedDate = loc.unlocked_at ? new Date(loc.unlocked_at).toLocaleDateString() : '';
     return (
         <div {...longPressProps} onClick={() => onToggle(loc.id)} className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer select-none ${loc.count > 0 ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}>
             <div className="flex items-center gap-4"><span className={`text-2xl font-caveat ${loc.count > 0 ? 'text-gold' : 'text-gray-400'}`}>{loc.name}</span>{loc.count > 0 && <span className="bg-gold text-black text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{loc.count}x</span>}</div>
-            {loc.count > 0 ? (<div className="text-right flex-shrink-0"><CheckCircle className="text-green-500 inline mb-1"/><div className="text-xs text-gray-500">{new Date(loc.unlocked_at).toLocaleDateString()}</div></div>) : (<div className="w-6 h-6 rounded-full border-2 border-gray-600 flex-shrink-0"></div>)}
+            {loc.count > 0 ? (<div className="text-right flex-shrink-0"><CheckCircle className="text-green-500 inline mb-1"/><div className="text-xs text-gray-500">{unlockedDate}</div></div>) : (<div className="w-6 h-6 rounded-full border-2 border-gray-600 flex-shrink-0"></div>)}
         </div>
     );
 };
 
 const HistoryItem = ({ item, onReturn, onDeleteRequest }) => {
     const longPressProps = useLongPress(() => onDeleteRequest(item), 800);
+    const dateStr = item.pulled_at ? new Date(item.pulled_at).toLocaleDateString() : '';
     return (
         <div {...longPressProps} className="bg-gray-900 p-4 rounded-lg border border-gray-800 flex justify-between items-center select-none">
-            <div><p className="text-gold font-caveat text-xl">{item.text}</p><p className="text-xs text-gray-500">{item.pulled_at ? new Date(item.pulled_at).toLocaleDateString() : ''}</p></div>
+            <div><p className="text-gold font-caveat text-xl">{item.text}</p><p className="text-xs text-gray-500">{dateStr}</p></div>
             <button onClick={() => onReturn(item.id)} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded text-white flex items-center gap-1"><RotateCw size={12}/> Return</button>
         </div>
     );
@@ -414,12 +405,18 @@ const LocationUnlocks = () => {
     const [locations, setLocations] = useState([]);
     const [newLoc, setNewLoc] = useState("");
     const [menuTarget, setMenuTarget] = useState(null);
-    const fetchLocs = () => { fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setLocations(data); }).catch(console.error); };
+
+    const fetchLocs = () => {
+        fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setLocations(data); }).catch(console.error);
+    };
+
     useEffect(() => { fetchLocs(); }, []);
+
     const toggleLoc = async (id) => { await fetch(`${API_URL}/locations/${id}/toggle`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ increment: true }) }); fetchLocs(); };
     const addLoc = async () => { if(!newLoc) return; const res = await fetch(`${API_URL}/locations`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ name: newLoc }) }); if(res.ok) { fetchLocs(); setNewLoc(""); } };
     const deleteLoc = async () => { if(!menuTarget) return; await fetch(`${API_URL}/locations/${menuTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
     const resetLoc = async () => { if(!menuTarget) return; await fetch(`${API_URL}/locations/${menuTarget.id}/reset`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
+
     return (
         <div>
             <h2 className="text-gold text-3xl mb-6 flex items-center gap-2"><MapPin/> Locations</h2>
