@@ -1,6 +1,6 @@
 /**
  * Privy Backend - Node.js
- * COMPLETE VERSION - Includes Auth, Cards, Dice, Locations, Fantasies, Books, Ntfy, Toys, Lingerie
+ * COMPLETE VERSION
  */
 
 const express = require('express');
@@ -56,9 +56,13 @@ db.serialize(() => {
     // Fantasies
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, pulled_at DATETIME)`);
 
-    // NEW: Toys & Lingerie
+    // Galleries
     db.run(`CREATE TABLE IF NOT EXISTS toys (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS lingerie (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
+    
+    // NEW: Protection
+    db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
+    db.run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
 
     // Migrations
     try {
@@ -66,7 +70,7 @@ db.serialize(() => {
         db.run(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`, () => {});
     } catch (e) {}
 
-    // Seeding (Dice & Locations)
+    // Seed Data
     db.get("SELECT count(*) as count FROM dice_options", (err, row) => {
         if (row && row.count === 0) {
             const defaults = [
@@ -101,16 +105,24 @@ const sendNtfy = (itemId, type = 'card') => {
         // Determine Table and Message based on Type
         let table = 'cards';
         let title = 'Privy: Card Revealed!';
-        let message = "Today's Position \uD83D\uDE09"; // 😉
+        let message = "Today's Position \uD83D\uDE09"; 
         
         if (type === 'toy') {
             table = 'toys';
             title = 'Privy: Toy Selected!';
-            message = "Let's play with this tonight \uD83D\uDD25"; // 🔥
+            message = "Let's play with this tonight \uD83D\uDD25"; 
         } else if (type === 'lingerie') {
             table = 'lingerie';
             title = 'Privy: Lingerie Chosen!';
-            message = "Wear this for me \uD83D\uDC8B"; // 💋
+            message = "Wear this for me \uD83D\uDC8B";
+        } else if (type === 'condoms') {
+            table = 'condoms';
+            title = 'Privy: Protection Selected';
+            message = "Safety First! Use this one \uD83D\uDEE1\uFE0F";
+        } else if (type === 'lubes') {
+            table = 'lubes';
+            title = 'Privy: Lube Selected';
+            message = "Smooth things over with this \uD83D\uDCA7";
         }
 
         db.get(`SELECT filepath FROM ${table} WHERE id = ?`, [itemId], (err, item) => {
@@ -153,13 +165,12 @@ const sendNtfy = (itemId, type = 'card') => {
 // --- File Upload Config ---
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        // Simple folder logic: books -> books, everything else (cards, toys, lingerie) -> cards folder or root uploads
-        // Let's keep it simple and put everything in 'uploads' subfolders if we want, or just flat.
-        // Existing logic used 'cards' and 'books'. Let's add support for toys/lingerie folders.
         let subfolder = 'cards';
         if (req.path.includes('book')) subfolder = 'books';
         else if (req.path.includes('toy')) subfolder = 'toys';
         else if (req.path.includes('lingerie')) subfolder = 'lingerie';
+        else if (req.path.includes('condom')) subfolder = 'condoms';
+        else if (req.path.includes('lube')) subfolder = 'lubes';
         
         const dir = path.join(DATA_DIR, 'uploads', subfolder);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -205,7 +216,7 @@ app.put('/api/books/:id', auth, (req, res) => { const { title } = req.body; db.r
 app.delete('/api/books/:id', auth, (req, res) => { const id = req.params.id; db.get(`SELECT filepath FROM books WHERE id = ?`, [id], (err, row) => { if (row) { try { const cleanPath = row.filepath.replace('/uploads/', ''); const absPath = path.join(DATA_DIR, 'uploads', cleanPath); if (fs.existsSync(absPath)) fs.unlinkSync(absPath); } catch(e) {} } db.run(`DELETE FROM books WHERE id = ?`, [id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); }); });
 app.post('/api/books/:id/extract', auth, (req, res) => { const bookId = req.params.id; req.setTimeout(1200000); db.get(`SELECT * FROM books WHERE id = ?`, [bookId], (err, book) => { if (err || !book) return res.status(404).json({ error: 'Book not found' }); const bookPath = book.filepath.replace('/uploads/', ''); const absBookPath = path.join(DATA_DIR, 'uploads', bookPath); if (!fs.existsSync(absBookPath)) return res.status(404).json({ error: 'File missing' }); const sectionTitle = `From: ${book.title}`; db.run(`INSERT INTO sections (title) VALUES (?)`, [sectionTitle], function(err) { if (err) return res.status(500).json({ error: 'Failed' }); const sectionId = this.lastID; const tempDir = path.join(DATA_DIR, 'uploads', 'temp_' + Date.now()); fs.mkdirSync(tempDir); const cmd = `pdfimages -png "${absBookPath}" "${tempDir}/img"`; exec(cmd, { maxBuffer: 1024 * 1024 * 100, timeout: 600000 }, (error, stdout, stderr) => { if (error) { fs.rmSync(tempDir, { recursive: true, force: true }); return res.status(500).json({ error: 'Extraction failed' }); } fs.readdir(tempDir, (err, files) => { if (err) { fs.rmSync(tempDir, { recursive: true, force: true }); return res.status(500).json({ error: 'Read dir failed' }); } const cardPromises = files.map(file => { return new Promise((resolve) => { const tempFilePath = path.join(tempDir, file); const stats = fs.statSync(tempFilePath); if (stats.size < 50 * 1024) { fs.unlinkSync(tempFilePath); resolve(null); return; } const newFilename = `${Date.now()}_${file}`; const newPath = path.join(DATA_DIR, 'uploads', 'cards', newFilename); fs.renameSync(tempFilePath, newPath); const dbPath = `/uploads/cards/${newFilename}`; db.run(`INSERT INTO cards (filepath, section_id) VALUES (?, ?)`, [dbPath, sectionId], function() { resolve(this.lastID); }); }); }); Promise.all(cardPromises).then(() => { fs.rmSync(tempDir, { recursive: true, force: true }); res.json({ success: true, sectionId, message: 'Images extracted' }); }); }); }); }); }); });
 
-// ... (Dice, Locations, Fantasies, Reset routes same as before) ...
+// --- Dice & Locations & Fantasies ---
 app.get('/api/dice', auth, (req, res) => { db.all(`SELECT * FROM dice_options`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); }); });
 app.put('/api/dice', auth, (req, res) => { const { items, role } = req.body; db.serialize(() => { db.run(`DELETE FROM dice_options WHERE role = ?`, [role || 'wife']); const stmt = db.prepare(`INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)`); items.forEach(item => stmt.run(item.type, item.text, role || 'wife')); stmt.finalize(); res.json({success: true}); }); });
 
@@ -222,11 +233,10 @@ app.post('/api/fantasies/pull', auth, (req, res) => { db.get(`SELECT * FROM fant
 app.post('/api/fantasies/:id/return', auth, (req, res) => { db.run(`UPDATE fantasies SET pulled_at = NULL WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
 app.delete('/api/fantasies/:id', auth, (req, res) => { db.run(`DELETE FROM fantasies WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
 
-app.post('/api/reset-app', auth, (req, res) => { db.serialize(() => { db.run(`DELETE FROM card_history`); db.run(`UPDATE cards SET scratched_count = 0`); db.run(`UPDATE location_unlocks SET count = 0, unlocked_at = NULL`); db.run(`UPDATE toys SET chosen_count = 0`); db.run(`UPDATE lingerie SET chosen_count = 0`); res.json({ success: true }); }); });
+app.post('/api/reset-app', auth, (req, res) => { db.serialize(() => { db.run(`DELETE FROM card_history`); db.run(`UPDATE cards SET scratched_count = 0`); db.run(`UPDATE location_unlocks SET count = 0, unlocked_at = NULL`); db.run(`UPDATE toys SET chosen_count = 0`); db.run(`UPDATE lingerie SET chosen_count = 0`); db.run(`UPDATE condoms SET chosen_count = 0`); db.run(`UPDATE lubes SET chosen_count = 0`); res.json({ success: true }); }); });
 
-// --- NEW ROUTES: Toys & Lingerie ---
+// --- NEW ROUTES: Toys, Lingerie, Protection (Unified Handler) ---
 
-// Generic Handler for "Gallery Items" (Toys/Lingerie)
 const handleGalleryGet = (table) => (req, res) => {
     db.all(`SELECT * FROM ${table}`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); });
 };
@@ -257,28 +267,37 @@ const handleGalleryDelete = (table) => (req, res) => {
 };
 
 const handleGalleryDraw = (table, type) => (req, res) => {
-    // 1. Get Item
     db.get(`SELECT * FROM ${table} WHERE id = ?`, [req.params.id], (err, item) => {
         if(err || !item) return res.status(404).json({error: 'Not found'});
-        
-        // 2. Increment
         db.run(`UPDATE ${table} SET chosen_count = chosen_count + 1 WHERE id = ?`, [req.params.id]);
-        
-        // 3. Notify
         sendNtfy(req.params.id, type);
         res.json({success: true});
     });
 };
 
+// Toys
 app.get('/api/toys', auth, handleGalleryGet('toys'));
 app.post('/api/toys', auth, upload.single('file'), handleGalleryPost('toys', 'toys'));
 app.delete('/api/toys/:id', auth, handleGalleryDelete('toys'));
 app.post('/api/toys/:id/draw', auth, handleGalleryDraw('toys', 'toy'));
 
+// Lingerie
 app.get('/api/lingerie', auth, handleGalleryGet('lingerie'));
 app.post('/api/lingerie', auth, upload.single('file'), handleGalleryPost('lingerie', 'lingerie'));
 app.delete('/api/lingerie/:id', auth, handleGalleryDelete('lingerie'));
 app.post('/api/lingerie/:id/draw', auth, handleGalleryDraw('lingerie', 'lingerie'));
+
+// Protection (Condoms)
+app.get('/api/condoms', auth, handleGalleryGet('condoms'));
+app.post('/api/condoms', auth, upload.single('file'), handleGalleryPost('condoms', 'condoms'));
+app.delete('/api/condoms/:id', auth, handleGalleryDelete('condoms'));
+app.post('/api/condoms/:id/draw', auth, handleGalleryDraw('condoms', 'condoms'));
+
+// Protection (Lubes)
+app.get('/api/lubes', auth, handleGalleryGet('lubes'));
+app.post('/api/lubes', auth, upload.single('file'), handleGalleryPost('lubes', 'lubes'));
+app.delete('/api/lubes/:id', auth, handleGalleryDelete('lubes'));
+app.post('/api/lubes/:id/draw', auth, handleGalleryDraw('lubes', 'lubes'));
 
 app.get('*', (req, res) => { res.sendFile(path.join(__dirname, '../client/dist/index.html')); });
 app.listen(PORT, () => { console.log(`🚀 Privy running on port ${PORT}`); });

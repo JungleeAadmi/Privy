@@ -1,8 +1,27 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, PenTool } from 'lucide-react';
 
 const API_URL = '/api';
+
+// --- Custom Icons ---
+const VibratorIcon = ({ size=24, className }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+        <path d="M12 22v-6"/>
+        <path d="M9 16a3 3 0 0 1 6 0"/>
+        <path d="M7 10l-2 2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l-2-2"/>
+    </svg>
+);
+
+const BikiniIcon = ({ size=24, className }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M6 5l-2 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2l-2-5z"/>
+        <path d="M18 5l-2 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2l-2-5z"/>
+        <path d="M4 14l2 6h12l2-6"/>
+        <path d="M12 14v6"/>
+    </svg>
+);
 
 // --- Error Boundary ---
 class ErrorBoundary extends React.Component {
@@ -226,7 +245,7 @@ const BookItem = ({ book, onClick, onLongPress }) => {
     return ( <div {...longPressProps} onClick={() => onClick(book)} className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md group select-none"><Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/><div className="overflow-hidden"><h3 className="text-xl text-white truncate w-full">{book.title}</h3><p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p></div></div> );
 };
 
-const GalleryItem = ({ item, onDeleteRequest, onDraw }) => {
+const GalleryItem = ({ item, onDeleteRequest }) => {
     const longPressProps = useLongPress(() => onDeleteRequest(item.id), 800);
     return (
       <div {...longPressProps} className="relative aspect-square bg-gray-900 rounded-lg overflow-hidden border border-gold/30">
@@ -262,20 +281,22 @@ const Auth = ({ setUser }) => {
   );
 };
 
-// Generic Gallery Component for Toys/Lingerie
+// Generic Gallery Component for Toys/Lingerie/Protection
 const Gallery = ({ title, endpoint, icon }) => {
     const [items, setItems] = useState([]);
     const [winner, setWinner] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
     const [deleteId, setDeleteId] = useState(null);
 
-    const fetchItems = () => {
+    const fetchItems = useCallback(() => {
         fetch(`${API_URL}/${endpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
             .then(res => res.json())
-            .then(data => { if(Array.isArray(data)) setItems(data); });
-    };
+            .then(data => { if(Array.isArray(data)) setItems(data); })
+            .catch(() => setItems([]));
+    }, [endpoint]);
 
-    useEffect(() => { fetchItems(); }, []);
+    useEffect(() => { fetchItems(); }, [fetchItems]);
 
     const handleUpload = async (e) => {
         const files = Array.from(e.target.files);
@@ -316,8 +337,9 @@ const Gallery = ({ title, endpoint, icon }) => {
 
     return (
         <div className="p-4 pb-24 flex flex-col items-center min-h-screen">
-            <h2 className="text-gold text-3xl mb-6 flex items-center gap-2">{icon} {title}</h2>
+            <h2 className="text-gold text-3xl mb-6 flex items-center gap-2 w-full justify-start">{icon} {title}</h2>
             
+            {/* Display Area */}
             {winner ? (
                  <div className="relative w-full max-w-sm aspect-[3/4] border-4 border-gold rounded-xl overflow-hidden shadow-2xl mb-8 animate-fadeIn">
                      <img src={winner.filepath} className="w-full h-full object-cover" />
@@ -325,25 +347,58 @@ const Gallery = ({ title, endpoint, icon }) => {
                      {!isDrawing && <button onClick={() => setWinner(null)} className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-full"><X/></button>}
                  </div>
             ) : (
-                <div className="w-full max-w-sm aspect-video bg-gray-900 border-2 border-dashed border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-500 mb-8">
-                    <p>Ready to Draw?</p>
+                <button 
+                    onClick={handleDraw} 
+                    disabled={isDrawing || items.length === 0}
+                    className="w-full max-w-sm aspect-video bg-gray-900 border-2 border-dashed border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-500 mb-8 hover:border-gold hover:text-gold transition active:scale-95"
+                >
+                    {isDrawing ? <RefreshCw className="animate-spin mb-2" size={40}/> : <Shuffle className="mb-2" size={40}/>}
+                    <span className="text-xl font-bold">{items.length > 0 ? "TAP TO DRAW" : "Empty Collection"}</span>
+                </button>
+            )}
+
+            {/* Controls */}
+            <div className="w-full flex justify-end mb-4">
+                <button 
+                    onClick={() => setIsEditing(!isEditing)} 
+                    className={`flex items-center gap-2 px-4 py-2 rounded-full border transition ${isEditing ? 'bg-gold text-black border-gold' : 'bg-transparent text-gray-400 border-gray-700'}`}
+                >
+                    <Edit2 size={16}/> {isEditing ? 'Done' : 'Manage'}
+                </button>
+            </div>
+
+            {/* Grid (Only visible in Edit Mode) */}
+            {isEditing && (
+                <div className="w-full grid grid-cols-3 gap-2 animate-fadeIn">
+                    <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40">
+                        <Plus className="text-burgundy"/>
+                        <span className="text-xs text-burgundy mt-1">Add</span>
+                        <input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} />
+                    </label>
+                    {items.map(item => (
+                        <GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />
+                    ))}
                 </div>
             )}
 
-            <button onClick={handleDraw} disabled={isDrawing} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50 mb-8">DRAW</button>
-
-            <div className="w-full grid grid-cols-3 gap-2">
-                <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40">
-                    <Plus className="text-burgundy"/>
-                    <span className="text-xs text-burgundy mt-1">Add</span>
-                    <input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} />
-                </label>
-                {items.map(item => (
-                    <GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />
-                ))}
-            </div>
-
             {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Item?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
+        </div>
+    );
+};
+
+const Protection = () => {
+    const [tab, setTab] = useState('condoms');
+    return (
+        <div className="flex flex-col h-full">
+            <div className="flex justify-center gap-4 p-4">
+                <button onClick={() => setTab('condoms')} className={`px-6 py-2 rounded-full border ${tab === 'condoms' ? 'bg-gold text-black border-gold' : 'text-gray-500 border-gray-700'}`}>Condoms</button>
+                <button onClick={() => setTab('lubes')} className={`px-6 py-2 rounded-full border ${tab === 'lubes' ? 'bg-gold text-black border-gold' : 'text-gray-500 border-gray-700'}`}>Lubes</button>
+            </div>
+            {tab === 'condoms' ? (
+                <Gallery title="Condoms" endpoint="condoms" icon={<Shield size={32} className="text-blue-400"/>} />
+            ) : (
+                <Gallery title="Lubes" endpoint="lubes" icon={<Folder size={32} className="text-pink-400"/>} />
+            )}
         </div>
     );
 };
@@ -681,6 +736,7 @@ const Layout = ({ children, user, logout }) => {
       <nav className="flex-none w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50"><Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}><Layers size={24} /><span className="text-xs">Cards</span></Link><Link to="/spin" className={`flex flex-col items-center ${location.pathname === '/spin' ? 'text-lipstick' : 'text-gray-500'}`}><Aperture size={24} /><span className="text-xs">Spin</span></Link><Link to="/dice" className={`flex flex-col items-center ${location.pathname === '/dice' ? 'text-lipstick' : 'text-gray-500'}`}><Dices size={24} /><span className="text-xs">Dice</span></Link><Link to="/extras" className={`flex flex-col items-center ${location.pathname === '/extras' ? 'text-lipstick' : 'text-gray-500'}`}><Sparkles size={24} /><span className="text-xs">Extras</span></Link><Link to="/books" className={`flex flex-col items-center ${location.pathname === '/books' ? 'text-lipstick' : 'text-gray-500'}`}><Book size={24} /><span className="text-xs">Books</span></Link>
       <Link to="/toys" className={`flex flex-col items-center ${location.pathname === '/toys' ? 'text-lipstick' : 'text-gray-500'}`}><Zap size={24} /><span className="text-xs">Toys</span></Link>
       <Link to="/lingerie" className={`flex flex-col items-center ${location.pathname === '/lingerie' ? 'text-lipstick' : 'text-gray-500'}`}><Shirt size={24} /><span className="text-xs">Lingerie</span></Link>
+      <Link to="/protection" className={`flex flex-col items-center ${location.pathname === '/protection' ? 'text-lipstick' : 'text-gray-500'}`}><Shield size={24} /><span className="text-xs">Safety</span></Link>
       </nav>
       {showResetModal && (<div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"><div className="bg-gray-900 border border-red-500 p-6 rounded-xl w-80 text-center shadow-2xl"><AlertTriangle size={48} className="mx-auto text-red-500 mb-4" /><h3 className="text-white text-2xl mb-2 font-bold">App Reset</h3><p className="text-gray-400 text-sm mb-6">{resetStep === 1 ? "This will reset all scratch counts and history to zero. This cannot be undone." : "Are you really sure? This is your last chance."}</p><input className="w-full p-3 bg-black border border-gray-700 rounded text-white text-center tracking-widest mb-4 uppercase" placeholder="Type RESET" value={resetInput} onChange={e => setResetInput(e.target.value.toUpperCase())} /><div className="flex justify-center gap-4"><button onClick={() => { setShowResetModal(false); setResetStep(1); setResetInput(""); }} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleResetSubmit} className={`px-4 py-2 rounded font-bold text-white ${resetInput === 'RESET' ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 cursor-not-allowed'}`} disabled={resetInput !== 'RESET'}>{resetStep === 1 ? "Next Step" : "CONFIRM RESET"}</button></div></div></div>)}
     </div>
@@ -697,8 +753,9 @@ export default function App() {
       <Route path="/dice" element={<DiceGame />} />
       <Route path="/extras" element={<Extras />} />
       <Route path="/books" element={<Books />} />
-      <Route path="/toys" element={<Gallery title="Toys" endpoint="toys" icon={<Zap size={32}/>} />} />
-      <Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<Shirt size={32}/>} />} />
+      <Route path="/toys" element={<Gallery title="Toys" endpoint="toys" icon={<VibratorIcon size={32}/>} />} />
+      <Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<BikiniIcon size={32}/>} />} />
+      <Route path="/protection" element={<Protection />} />
       <Route path="/settings" element={<Settings user={user} logout={logout} />} />
       <Route path="/notifications" element={<Notifications />} />
   </Routes></Layout></Router>)}</ErrorBoundary>);
