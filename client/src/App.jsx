@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, ChevronLeft } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -83,24 +83,25 @@ const playSound = (type) => {
             osc.start(now);
             osc.stop(now + 0.5);
         } else if (type === 'end') {
-            // Distinct Double Beep for End
-            const osc2 = ctx.createOscillator();
-            const gain2 = ctx.createGain();
-            osc2.connect(gain2);
-            gain2.connect(ctx.destination);
-            
-            osc.type = 'square'; osc.frequency.setValueAtTime(600, now);
-            gain.gain.setValueAtTime(0.5, now); gain.gain.linearRampToValueAtTime(0, now + 0.2);
-            osc.start(now); osc.stop(now + 0.2);
-            
-            osc2.type = 'square'; osc2.frequency.setValueAtTime(800, now + 0.25);
-            gain2.gain.setValueAtTime(0.5, now + 0.25); gain2.gain.linearRampToValueAtTime(0, now + 0.5);
-            osc2.start(now + 0.25); osc2.stop(now + 0.5);
+            const beep = (startTime, freq) => {
+                const o = ctx.createOscillator();
+                const g = ctx.createGain();
+                o.connect(g); g.connect(ctx.destination);
+                o.type = 'square';
+                o.frequency.setValueAtTime(freq, startTime);
+                g.gain.setValueAtTime(0.1, startTime);
+                g.gain.exponentialRampToValueAtTime(0.01, startTime + 0.1);
+                o.start(startTime);
+                o.stop(startTime + 0.1);
+            };
+            beep(now, 600);
+            beep(now + 0.2, 600);
+            beep(now + 0.4, 800);
         }
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Sub-Components ---
+// --- Global Sub-Components ---
 
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
@@ -144,7 +145,7 @@ const HistoryList = ({ cardId, onClose }) => {
     <div className="w-full h-full bg-gray-900 p-4 overflow-y-auto animate-fadeIn">
        <div className="flex justify-between items-center mb-4 border-b border-gold/30 pb-2">
          <h3 className="text-gold text-xl flex items-center gap-2"><Clock size={18}/> History</h3>
-         <button onClick={onClose} className="p-1 rounded-full hover:bg-white/10 text-gold"><ChevronLeft size={24}/></button>
+         <button onClick={onClose} className="p-1 rounded-full hover:bg-white/10 text-gold"><X size={24}/></button>
        </div>
        {loading ? <p className="text-gray-400">Loading...</p> : history.length === 0 ? <p className="text-gray-400 text-center mt-10">No history yet.</p> : (
          <ul className="space-y-3">{history.map((h, i) => (<li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm"><span className="text-white flex items-center gap-2"><Calendar size={14} className="text-burgundy"/> {formatDate(h.timestamp)}</span><span className="text-gold font-mono">{formatTime(h.timestamp)}</span></li>))}</ul>
@@ -225,6 +226,15 @@ const BookItem = ({ book, onClick, onLongPress }) => {
     return ( <div {...longPressProps} onClick={() => onClick(book)} className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md group select-none"><Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/><div className="overflow-hidden"><h3 className="text-xl text-white truncate w-full">{book.title}</h3><p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p></div></div> );
 };
 
+const GalleryItem = ({ item, onDeleteRequest, onDraw }) => {
+    const longPressProps = useLongPress(() => onDeleteRequest(item.id), 800);
+    return (
+      <div {...longPressProps} className="relative aspect-square bg-gray-900 rounded-lg overflow-hidden border border-gold/30">
+          <img src={item.filepath} alt="Item" className="w-full h-full object-cover" />
+      </div>
+    );
+};
+
 // --- Pages ---
 
 const Auth = ({ setUser }) => {
@@ -250,6 +260,92 @@ const Auth = ({ setUser }) => {
       </form>
     </div>
   );
+};
+
+// Generic Gallery Component for Toys/Lingerie
+const Gallery = ({ title, endpoint, icon }) => {
+    const [items, setItems] = useState([]);
+    const [winner, setWinner] = useState(null);
+    const [isDrawing, setIsDrawing] = useState(false);
+    const [deleteId, setDeleteId] = useState(null);
+
+    const fetchItems = () => {
+        fetch(`${API_URL}/${endpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+            .then(res => res.json())
+            .then(data => { if(Array.isArray(data)) setItems(data); });
+    };
+
+    useEffect(() => { fetchItems(); }, []);
+
+    const handleUpload = async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+        for (const file of files) {
+            const formData = new FormData();
+            formData.append('file', file);
+            await fetch(`${API_URL}/${endpoint}`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: formData });
+        }
+        fetchItems();
+    };
+
+    const handleDraw = () => {
+        if(items.length === 0) return alert("Upload images first!");
+        setIsDrawing(true);
+        setWinner(null);
+        
+        let counter = 0;
+        const interval = setInterval(() => {
+            setWinner(items[Math.floor(Math.random() * items.length)]);
+            counter++;
+            if(counter > 20) {
+                clearInterval(interval);
+                const final = items[Math.floor(Math.random() * items.length)];
+                setWinner(final);
+                setIsDrawing(false);
+                fetch(`${API_URL}/${endpoint}/${final.id}/draw`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+            }
+        }, 100);
+    };
+
+    const handleDelete = async () => {
+        if(!deleteId) return;
+        await fetch(`${API_URL}/${endpoint}/${deleteId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+        setDeleteId(null);
+        fetchItems();
+    };
+
+    return (
+        <div className="p-4 pb-24 flex flex-col items-center min-h-screen">
+            <h2 className="text-gold text-3xl mb-6 flex items-center gap-2">{icon} {title}</h2>
+            
+            {winner ? (
+                 <div className="relative w-full max-w-sm aspect-[3/4] border-4 border-gold rounded-xl overflow-hidden shadow-2xl mb-8 animate-fadeIn">
+                     <img src={winner.filepath} className="w-full h-full object-cover" />
+                     {isDrawing && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><span className="text-gold text-xl animate-pulse">Shuffling...</span></div>}
+                     {!isDrawing && <button onClick={() => setWinner(null)} className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-full"><X/></button>}
+                 </div>
+            ) : (
+                <div className="w-full max-w-sm aspect-video bg-gray-900 border-2 border-dashed border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-500 mb-8">
+                    <p>Ready to Draw?</p>
+                </div>
+            )}
+
+            <button onClick={handleDraw} disabled={isDrawing} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50 mb-8">DRAW</button>
+
+            <div className="w-full grid grid-cols-3 gap-2">
+                <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40">
+                    <Plus className="text-burgundy"/>
+                    <span className="text-xs text-burgundy mt-1">Add</span>
+                    <input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} />
+                </label>
+                {items.map(item => (
+                    <GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />
+                ))}
+            </div>
+
+            {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Item?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
+        </div>
+    );
 };
 
 const Spin = () => {
@@ -582,7 +678,10 @@ const Layout = ({ children, user, logout }) => {
       <header className="flex-none w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-2 flex justify-between items-center shadow-lg"><div className="flex items-center gap-3"><img src="/apple-touch-icon.png" alt="Logo" className="w-10 h-10 rounded-full border border-gold shadow-md" /><div className="flex flex-col"><h1 className="text-2xl text-gold tracking-widest leading-none">Privy</h1><span className="text-xl text-gray-400 -mt-1">@{user?.username}</span></div></div><div className="flex items-center gap-4"><button onClick={handleReload} className="text-gold/80 hover:text-gold focus:outline-none active:rotate-180 transition-transform duration-500"><RefreshCw size={24} /></button><button onClick={() => setMenuOpen(!menuOpen)} className="text-gold focus:outline-none">{menuOpen ? <X size={28} /> : <div className="space-y-1"><div className="w-6 h-0.5 bg-gold"></div><div className="w-6 h-0.5 bg-gold"></div><div className="w-6 h-0.5 bg-gold"></div></div>}</button></div></header>
       {menuOpen && (<div className="absolute top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-50 p-4 shadow-2xl transform transition-transform"><div className="flex flex-col gap-4 text-xl"><Link to="/settings" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><User size={20}/> Profile</Link><Link to="/notifications" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><Bell size={20}/> Notifications</Link><div className="my-2 border-t border-gray-700"></div><button onClick={() => { setShowResetModal(true); setMenuOpen(false); }} className="flex items-center gap-3 p-2 text-red-400 hover:bg-white/10 rounded"><RotateCcw size={20}/> Reset App</button><button onClick={logout} className="flex items-center gap-3 p-2 text-lipstick hover:bg-white/10 rounded"><LogOut size={20}/> Logout</button></div></div>)}
       <main className="flex-1 overflow-y-auto bg-gradient-to-b from-black via-eggplant/20 to-black relative w-full">{children}</main>
-      <nav className="flex-none w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50"><Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}><Layers size={24} /><span className="text-xs">Cards</span></Link><Link to="/spin" className={`flex flex-col items-center ${location.pathname === '/spin' ? 'text-lipstick' : 'text-gray-500'}`}><Aperture size={24} /><span className="text-xs">Spin</span></Link><Link to="/dice" className={`flex flex-col items-center ${location.pathname === '/dice' ? 'text-lipstick' : 'text-gray-500'}`}><Dices size={24} /><span className="text-xs">Dice</span></Link><Link to="/extras" className={`flex flex-col items-center ${location.pathname === '/extras' ? 'text-lipstick' : 'text-gray-500'}`}><Sparkles size={24} /><span className="text-xs">Extras</span></Link><Link to="/books" className={`flex flex-col items-center ${location.pathname === '/books' ? 'text-lipstick' : 'text-gray-500'}`}><Book size={24} /><span className="text-xs">Books</span></Link></nav>
+      <nav className="flex-none w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50"><Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}><Layers size={24} /><span className="text-xs">Cards</span></Link><Link to="/spin" className={`flex flex-col items-center ${location.pathname === '/spin' ? 'text-lipstick' : 'text-gray-500'}`}><Aperture size={24} /><span className="text-xs">Spin</span></Link><Link to="/dice" className={`flex flex-col items-center ${location.pathname === '/dice' ? 'text-lipstick' : 'text-gray-500'}`}><Dices size={24} /><span className="text-xs">Dice</span></Link><Link to="/extras" className={`flex flex-col items-center ${location.pathname === '/extras' ? 'text-lipstick' : 'text-gray-500'}`}><Sparkles size={24} /><span className="text-xs">Extras</span></Link><Link to="/books" className={`flex flex-col items-center ${location.pathname === '/books' ? 'text-lipstick' : 'text-gray-500'}`}><Book size={24} /><span className="text-xs">Books</span></Link>
+      <Link to="/toys" className={`flex flex-col items-center ${location.pathname === '/toys' ? 'text-lipstick' : 'text-gray-500'}`}><Zap size={24} /><span className="text-xs">Toys</span></Link>
+      <Link to="/lingerie" className={`flex flex-col items-center ${location.pathname === '/lingerie' ? 'text-lipstick' : 'text-gray-500'}`}><Shirt size={24} /><span className="text-xs">Lingerie</span></Link>
+      </nav>
       {showResetModal && (<div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"><div className="bg-gray-900 border border-red-500 p-6 rounded-xl w-80 text-center shadow-2xl"><AlertTriangle size={48} className="mx-auto text-red-500 mb-4" /><h3 className="text-white text-2xl mb-2 font-bold">App Reset</h3><p className="text-gray-400 text-sm mb-6">{resetStep === 1 ? "This will reset all scratch counts and history to zero. This cannot be undone." : "Are you really sure? This is your last chance."}</p><input className="w-full p-3 bg-black border border-gray-700 rounded text-white text-center tracking-widest mb-4 uppercase" placeholder="Type RESET" value={resetInput} onChange={e => setResetInput(e.target.value.toUpperCase())} /><div className="flex justify-center gap-4"><button onClick={() => { setShowResetModal(false); setResetStep(1); setResetInput(""); }} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleResetSubmit} className={`px-4 py-2 rounded font-bold text-white ${resetInput === 'RESET' ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 cursor-not-allowed'}`} disabled={resetInput !== 'RESET'}>{resetStep === 1 ? "Next Step" : "CONFIRM RESET"}</button></div></div></div>)}
     </div>
   );
@@ -592,5 +691,15 @@ export default function App() {
   const [user, setUser] = useState(null);
   useEffect(() => { try { const saved = localStorage.getItem('user'); if (saved) setUser(JSON.parse(saved)); } catch (e) { localStorage.clear(); } }, []);
   const logout = () => { localStorage.removeItem('token'); localStorage.removeItem('user'); setUser(null); };
-  return (<ErrorBoundary>{!user ? (<Auth setUser={setUser} />) : (<Router><Layout user={user} logout={logout}><Routes><Route path="/" element={<Home />} /><Route path="/spin" element={<Spin />} /><Route path="/dice" element={<DiceGame />} /><Route path="/extras" element={<Extras />} /><Route path="/books" element={<Books />} /><Route path="/settings" element={<Settings user={user} logout={logout} />} /><Route path="/notifications" element={<Notifications />} /></Routes></Layout></Router>)}</ErrorBoundary>);
+  return (<ErrorBoundary>{!user ? (<Auth setUser={setUser} />) : (<Router><Layout user={user} logout={logout}><Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/spin" element={<Spin />} />
+      <Route path="/dice" element={<DiceGame />} />
+      <Route path="/extras" element={<Extras />} />
+      <Route path="/books" element={<Books />} />
+      <Route path="/toys" element={<Gallery title="Toys" endpoint="toys" icon={<Zap size={32}/>} />} />
+      <Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<Shirt size={32}/>} />} />
+      <Route path="/settings" element={<Settings user={user} logout={logout} />} />
+      <Route path="/notifications" element={<Notifications />} />
+  </Routes></Layout></Router>)}</ErrorBoundary>);
 }
