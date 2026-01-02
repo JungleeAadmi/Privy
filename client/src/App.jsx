@@ -56,12 +56,12 @@ const playSound = (type) => {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (!AudioContext) return;
         const ctx = new AudioContext();
-        // Web Audio API needs user interaction to resume state if suspended
         if (ctx.state === 'suspended') ctx.resume();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
+        
         if (type === 'ting') {
             osc.type = 'sine';
             osc.frequency.setValueAtTime(800, ctx.currentTime);
@@ -71,35 +71,28 @@ const playSound = (type) => {
             osc.start();
             osc.stop(ctx.currentTime + 0.5);
         } else if (type === 'end') {
-            // Play a specific distinct sequence
+            // Distinct Double Beep for End
             const now = ctx.currentTime;
-            // First beep
-            const osc1 = ctx.createOscillator();
-            const gain1 = ctx.createGain();
-            osc1.connect(gain1);
-            gain1.connect(ctx.destination);
+            const osc1 = ctx.createOscillator(); const gain1 = ctx.createGain();
+            osc1.connect(gain1); gain1.connect(ctx.destination);
+            osc1.type = 'square';
             osc1.frequency.setValueAtTime(600, now);
             gain1.gain.setValueAtTime(0.5, now);
-            gain1.gain.linearRampToValueAtTime(0, now + 0.3);
-            osc1.start(now);
-            osc1.stop(now + 0.3);
+            gain1.gain.linearRampToValueAtTime(0, now + 0.2);
+            osc1.start(now); osc1.stop(now + 0.2);
 
-            // Second beep (higher)
-            const osc2 = ctx.createOscillator();
-            const gain2 = ctx.createGain();
-            osc2.connect(gain2);
-            gain2.connect(ctx.destination);
-            osc2.frequency.setValueAtTime(800, now + 0.4);
-            gain2.gain.setValueAtTime(0.5, now + 0.4);
-            gain2.gain.linearRampToValueAtTime(0, now + 0.9);
-            osc2.start(now + 0.4);
-            osc2.stop(now + 0.9);
+            const osc2 = ctx.createOscillator(); const gain2 = ctx.createGain();
+            osc2.connect(gain2); gain2.connect(ctx.destination);
+            osc2.type = 'square';
+            osc2.frequency.setValueAtTime(800, now + 0.25);
+            gain2.gain.setValueAtTime(0.5, now + 0.25);
+            gain2.gain.linearRampToValueAtTime(0, now + 0.5);
+            osc2.start(now + 0.25); osc2.stop(now + 0.5);
         }
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Top-Level Components ---
-
+// --- Sub-Components ---
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
@@ -152,29 +145,29 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [progressText, setProgressText] = useState("");
   const handleExtract = async () => {
-    if (!confirm("Extract all images?")) return;
+    if (!confirm("Extract all images from this book into a new card section?")) return;
     setIsExtracting(true); setProgressText("Initializing...");
-    const intervals = [setTimeout(() => setProgressText("Scanning..."), 2000), setTimeout(() => setProgressText("Extracting..."), 5000)];
+    const intervals = [setTimeout(() => setProgressText("Scanning PDF pages..."), 2000), setTimeout(() => setProgressText("Extracting raw images..."), 5000), setTimeout(() => setProgressText("Filtering small assets..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 12000)];
     try {
         const res = await fetch(`${API_URL}/books/${bookId}/extract`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
         const data = await res.json();
         intervals.forEach(clearTimeout);
-        if (res.ok) { setProgressText("Done!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); }, 500); } 
-        else { alert(`Error: ${data.error}`); setIsExtracting(false); }
-    } catch { intervals.forEach(clearTimeout); alert("Failed."); setIsExtracting(false); }
+        if (res.ok) { setProgressText("Extraction Complete!"); setTimeout(() => { alert(`Success! ${data.message}. Check your Cards tab.`); setIsExtracting(false); setProgressText(""); }, 500); } 
+        else { alert(`Error: ${data.error}`); setIsExtracting(false); setProgressText(""); }
+    } catch { intervals.forEach(clearTimeout); alert("Extraction failed. Check network or server."); setIsExtracting(false); setProgressText(""); }
   };
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
       <div className="flex justify-between items-center px-4 pb-4 pt-12 bg-gray-900 border-b border-gold/20 safe-top">
         <div className="flex flex-col max-w-[60%]"><h3 className="text-gold text-xl truncate">{title}</h3>{isExtracting && <span className="text-xs text-gold/80 animate-pulse">{progressText}</span>}</div>
         <div className="flex gap-4 items-center">
-            <button onClick={handleExtract} disabled={isExtracting} className={`p-2 rounded-full text-white shadow-lg ${isExtracting ? 'bg-gray-700' : 'bg-blue-600'}`}><RefreshCw className={isExtracting ? "animate-spin" : ""} size={24}/></button>
+            <button onClick={handleExtract} disabled={isExtracting} className={`p-2 rounded-full text-white shadow-lg transition ${isExtracting ? 'bg-gray-700 cursor-wait' : 'bg-blue-600 hover:bg-blue-500'}`} title="Extract Images"><RefreshCw className={isExtracting ? "animate-spin" : ""} size={24}/></button>
             <button onClick={onClose} className="p-2 bg-burgundy rounded-full text-white hover:bg-lipstick shadow-lg"><X size={24}/></button>
         </div>
       </div>
       {isExtracting && <div className="w-full h-1 bg-gray-800"><div className="animate-progress-indeterminate w-full h-full"></div></div>}
       <div className="flex-1 w-full h-full bg-gray-800 flex items-center justify-center p-2 overflow-hidden relative">
-        <object data={url} type="application/pdf" className="w-full h-full rounded-lg border border-gold/20"><div className="text-white text-center flex flex-col items-center justify-center h-full gap-4"><p>Preview not supported.</p><a href={url} download className="bg-gold text-black font-bold py-2 px-6 rounded-full">Download PDF</a></div></object>
+        <object data={url} type="application/pdf" className="w-full h-full rounded-lg border border-gold/20"><div className="text-white text-center flex flex-col items-center justify-center h-full gap-4"><p>Preview not supported on this device.</p><a href={url} download className="bg-gold text-black font-bold py-2 px-6 rounded-full hover:bg-yellow-500 transition">Download PDF</a></div></object>
       </div>
     </div>
   );
@@ -247,6 +240,65 @@ const Auth = ({ setUser }) => {
   );
 };
 
+const Spin = () => {
+    const [cards, setCards] = useState([]);
+    const [sections, setSections] = useState([]);
+    const [activeSection, setActiveSection] = useState(null);
+    const [rotation, setRotation] = useState(0);
+    const [isSpinning, setIsSpinning] = useState(false);
+    const [winner, setWinner] = useState(null); 
+    const [showHistory, setShowHistory] = useState(false);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const [cRes, sRes] = await Promise.all([ fetch(`${API_URL}/cards`, { headers: { Authorization: `Bearer ${token}` } }), fetch(`${API_URL}/sections`, { headers: { Authorization: `Bearer ${token}` } }) ]);
+                if (cRes.ok && sRes.ok) {
+                    const cData = await cRes.json();
+                    const sData = await sRes.json();
+                    if(Array.isArray(cData)) setCards(cData);
+                    if(Array.isArray(sData)) setSections(sData);
+                }
+            } catch(e) {}
+        };
+        fetchData();
+    }, []);
+
+    const wheelGradient = `conic-gradient(${Array.from({length: 16}).map((_, i) => `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`).join(', ')})`;
+
+    const handleSpin = () => {
+        if (isSpinning) return;
+        const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; });
+        if (pool.length === 0) { alert("No cards in this section!"); return; }
+        setIsSpinning(true); setWinner(null);
+        const SEGMENT_COUNT = 16;
+        const slots = Array.from({length: SEGMENT_COUNT}, () => pool[Math.floor(Math.random() * pool.length)]);
+        const winningIndex = Math.floor(Math.random() * SEGMENT_COUNT);
+        const winningCard = slots[winningIndex];
+        const segmentAngle = 360 / 16; 
+        const offset = (winningIndex * segmentAngle) + (segmentAngle / 2);
+        const target = 360 - offset; 
+        let delta = target - (rotation % 360);
+        if (delta < 0) delta += 360;
+        const totalRotation = rotation + (5 * 360) + delta;
+        setRotation(totalRotation);
+        setTimeout(() => { setIsSpinning(false); setWinner(winningCard); fetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000);
+    };
+
+    return (
+        <div className="flex flex-col items-center w-full min-h-full py-4">
+            <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">{sections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={null} />))}</div>
+            <div className="relative w-80 h-80 shrink-0">
+                <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
+                <div className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden" style={{ transform: `rotate(${rotation}deg)`, transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)', background: wheelGradient }}>{Array.from({length: 16}).map((_, i) => (<div key={i} className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom" style={{ transform: `rotate(${i * 22.5 + 11.25}deg)` }}><span className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl">{i + 1}</span></div>))}</div>
+                <button onClick={handleSpin} disabled={isSpinning} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-gold border-4 border-burgundy shadow-lg flex items-center justify-center z-10 active:scale-95 transition"><span className="text-burgundy font-black text-xl font-sans tracking-widest">SPIN</span></button>
+            </div>
+            {winner && (<div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"><div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden bg-black"><button onClick={() => setWinner(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full"><X size={24}/></button><div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center">{showHistory ? (<HistoryList cardId={winner.id} onClose={() => setShowHistory(false)}/>) : (<img src={winner.filepath} alt="Winner" className="max-w-full max-h-full object-contain"/>)}</div><div className="h-[20%] flex flex-col items-center justify-center p-4"><h3 className="text-gold text-2xl font-caveat mb-2">The Wheel has Spoken!</h3><button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-white/50 text-sm hover:text-white"><Heart size={16} className="fill-lipstick text-lipstick"/><span>Revealed {winner.scratched_count + 1} times</span></button></div></div></div>)}
+        </div>
+    );
+};
+
 const DiceGame = () => {
     const [acts, setActs] = useState([]);
     const [locations, setLocations] = useState([]);
@@ -256,9 +308,8 @@ const DiceGame = () => {
     const [timerPaused, setTimerPaused] = useState(false);
     const [timeLeft, setTimeLeft] = useState(0);
     const [isEditing, setIsEditing] = useState(false);
-    const [activeRole, setActiveRole] = useState('wife'); // Default role
+    const [activeRole, setActiveRole] = useState('wife');
 
-    // Load dice options for all roles, then filter in render/roll
     const [allOptions, setAllOptions] = useState([]);
 
     useEffect(() => {
@@ -268,9 +319,8 @@ const DiceGame = () => {
             .catch(console.error);
     }, []);
 
-    // Filter current lists based on active role
     useEffect(() => {
-        const roleActs = allOptions.filter(d => d.type === 'act' && (d.role === activeRole || (!d.role && activeRole === 'wife'))); // Fallback for legacy data
+        const roleActs = allOptions.filter(d => d.type === 'act' && (d.role === activeRole || (!d.role && activeRole === 'wife'))); 
         const roleLocs = allOptions.filter(d => d.type === 'location' && (d.role === activeRole || (!d.role && activeRole === 'wife')));
         setActs(roleActs);
         setLocations(roleLocs);
@@ -287,7 +337,6 @@ const DiceGame = () => {
         setRolling(true); setTimerActive(false); setTimerPaused(false); setResult({ act: '?', loc: '?', time: '?' }); 
         let steps = 0;
         const interval = setInterval(() => {
-            // Use current filtered acts/locations
             const randomAct = acts.length ? acts[Math.floor(Math.random() * acts.length)].text : '?';
             const randomLoc = locations.length ? locations[Math.floor(Math.random() * locations.length)].text : '?';
             setResult({ act: randomAct, loc: randomLoc, time: generateTime() });
@@ -314,12 +363,7 @@ const DiceGame = () => {
                 <div className="space-y-4 text-left">
                     <div><label className="text-white block mb-2">Actions (One per line)</label><textarea className="w-full bg-gray-900 border border-gold p-2 rounded h-32 text-white" defaultValue={acts.map(a => a.text).join('\n')} id="editActs"/></div>
                     <div><label className="text-white block mb-2">Locations (One per line)</label><textarea className="w-full bg-gray-900 border border-gold p-2 rounded h-32 text-white" defaultValue={locations.map(a => a.text).join('\n')} id="editLocs"/></div>
-                    <div className="flex gap-4"><button onClick={() => setIsEditing(false)} className="flex-1 py-3 bg-gray-700 rounded text-white">Cancel</button><button onClick={async () => { 
-                        const newActs = document.getElementById('editActs').value.split('\n').filter(Boolean).map(t => ({type:'act', text:t})); 
-                        const newLocs = document.getElementById('editLocs').value.split('\n').filter(Boolean).map(t => ({type:'location', text:t})); 
-                        await fetch(`${API_URL}/dice`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ items: [...newActs, ...newLocs], role: activeRole }) }); 
-                        window.location.reload(); 
-                    }} className="flex-1 py-3 bg-gold text-black font-bold rounded">Save</button></div>
+                    <div className="flex gap-4"><button onClick={() => setIsEditing(false)} className="flex-1 py-3 bg-gray-700 rounded text-white">Cancel</button><button onClick={async () => { const newActs = document.getElementById('editActs').value.split('\n').filter(Boolean).map(t => ({type:'act', text:t})); const newLocs = document.getElementById('editLocs').value.split('\n').filter(Boolean).map(t => ({type:'location', text:t})); await fetch(`${API_URL}/dice`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ items: [...newActs, ...newLocs], role: activeRole }) }); window.location.reload(); }} className="flex-1 py-3 bg-gold text-black font-bold rounded">Save</button></div>
                 </div>
             </div>
         )
@@ -327,40 +371,24 @@ const DiceGame = () => {
 
     return (
         <div className="flex flex-col items-center justify-start h-full p-4 gap-6 w-full max-w-md mx-auto pt-4 overflow-y-auto">
-            {/* Role Switcher */}
             <div className="flex bg-gray-900 rounded-full p-1 mb-4 border border-gold/30">
                 <button onClick={() => setActiveRole('wife')} className={`px-6 py-2 rounded-full transition ${activeRole === 'wife' ? 'bg-burgundy text-white font-bold' : 'text-gray-400'}`}>Wife's Turn</button>
                 <button onClick={() => setActiveRole('husband')} className={`px-6 py-2 rounded-full transition ${activeRole === 'husband' ? 'bg-eggplant text-white font-bold' : 'text-gray-400'}`}>Husband's Turn</button>
             </div>
-
             <div className="flex flex-wrap gap-4 w-full justify-center">
-                <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-xl leading-tight">{result.act}</span></div>
-                <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-xl leading-tight">{result.loc}</span></div>
+                <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-2xl leading-tight">{result.act}</span></div>
+                <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-2xl leading-tight">{result.loc}</span></div>
                 <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-3xl">{result.time === '∞' ? '∞' : (result.time === '?' ? '?' : result.time + 's')}</span></div>
             </div>
-
-            {(!rolling && result.act !== '?' && result.loc !== '?') && (
-                <div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn w-full">
-                    <p className="text-white text-3xl font-caveat font-bold leading-relaxed">
-                        <span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span>
-                        {result.time === '∞' ? " until asked to stop." : ` for ${result.time} seconds.`}
-                    </p>
-                </div>
-            )}
-
+            {(!rolling && result.act !== '?' && result.loc !== '?') && (<div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn w-full"><p className="text-white text-3xl font-caveat font-bold leading-relaxed"><span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span> {result.time === '∞' ? " until asked to stop." : ` for ${result.time} seconds.`}</p></div>)}
             {(timerActive || timerPaused) && (<div className="text-red-500 font-mono text-6xl font-bold animate-pulse">{timeLeft}</div>)}
-
-            <div className="h-20 flex items-center justify-center w-full gap-6">
-                {!rolling && result.time !== '?' && result.time !== '∞' && (<>{timerActive ? (<button onClick={pauseTimer} className="w-16 h-16 rounded-full bg-yellow-600 flex items-center justify-center shadow-lg"><Pause fill="white" size={32} /></button>) : (<button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>)}{(timerActive || timerPaused) && (<button onClick={stopTimer} className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg"><Square fill="white" size={28} /></button>)}</>)}
-            </div>
-
+            <div className="h-20 flex items-center justify-center w-full gap-6">{!rolling && result.time !== '?' && result.time !== '∞' && (<>{timerActive ? (<button onClick={pauseTimer} className="w-16 h-16 rounded-full bg-yellow-600 flex items-center justify-center shadow-lg"><Pause fill="white" size={32} /></button>) : (<button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>)}{(timerActive || timerPaused) && (<button onClick={stopTimer} className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg"><Square fill="white" size={28} /></button>)}</>)}</div>
             <button onClick={handleRoll} disabled={rolling || timerActive} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50">ROLL</button>
             <button onClick={() => setIsEditing(true)} className="text-gray-500 flex items-center gap-2 mt-4"><Edit2 size={16} /> Edit Dice ({activeRole})</button>
         </div>
     );
 };
 
-// 6. Extras Tab
 const LocationUnlocks = () => {
     const [locations, setLocations] = useState([]);
     const [newLoc, setNewLoc] = useState("");
@@ -371,7 +399,6 @@ const LocationUnlocks = () => {
     const addLoc = async () => { if(!newLoc) return; const res = await fetch(`${API_URL}/locations`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ name: newLoc }) }); if(res.ok) { fetchLocs(); setNewLoc(""); } };
     const deleteLoc = async () => { if(!menuTarget) return; await fetch(`${API_URL}/locations/${menuTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
     const resetLoc = async () => { if(!menuTarget) return; await fetch(`${API_URL}/locations/${menuTarget.id}/reset`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
-
     return (
         <div>
             <h2 className="text-gold text-3xl mb-6 flex items-center gap-2"><MapPin/> Locations</h2>
@@ -385,45 +412,22 @@ const LocationUnlocks = () => {
 const FantasyJar = () => {
     const [wish, setWish] = useState("");
     const [pulled, setPulled] = useState(null);
-    const [unpulledCount, setUnpulledCount] = useState(0); // Track for visual
+    const [unpulledCount, setUnpulledCount] = useState(0); 
     const [history, setHistory] = useState([]);
     const [deleteTarget, setDeleteTarget] = useState(null);
-
     const fetchData = () => {
         fetch(`${API_URL}/fantasies`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setUnpulledCount(data.length); });
         fetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setHistory(data); });
     };
-
     useEffect(() => { fetchData(); }, []);
-
     const handleDrop = async () => { if(!wish.trim()) return; await fetch(`${API_URL}/fantasies`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ text: wish }) }); setWish(""); alert("Wish dropped in the jar! 🤫"); fetchData(); };
     const handlePull = async () => { const res = await fetch(`${API_URL}/fantasies/pull`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); const data = await res.json(); if(data.empty) { alert("The jar is empty! Add more fantasies."); } else { setPulled(data.text); fetchData(); } };
     const handleReturn = async (id) => { await fetch(`${API_URL}/fantasies/${id}/return`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); fetchData(); };
     const handleDelete = async () => { if (!deleteTarget) return; await fetch(`${API_URL}/fantasies/${deleteTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setDeleteTarget(null); fetchData(); };
-
     return (
         <div className="flex flex-col items-center justify-center gap-8">
             <h2 className="text-gold text-3xl font-caveat">The Fantasy Jar</h2>
-            {pulled ? (<div className="bg-white/10 p-8 rounded-xl border-2 border-gold text-center animate-fadeIn w-full max-w-sm"><Sparkles className="text-gold mx-auto mb-4" size={40} /><p className="text-3xl text-white font-caveat">{pulled}</p><button onClick={() => setPulled(null)} className="mt-6 text-gray-400 text-sm underline">Put away</button></div>) : (
-                <div onClick={handlePull} className="relative w-40 h-56 cursor-pointer group">
-                    {/* Lid */}
-                    <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-32 h-6 bg-gold rounded-sm shadow-md z-20"></div>
-                    {/* Jar Body */}
-                    <div className="w-full h-full bg-white/5 border-4 border-gray-600 rounded-b-[3rem] rounded-t-lg backdrop-blur-sm flex items-center justify-center shadow-[0_0_30px_rgba(0,0,0,0.5)] group-hover:border-gold transition-all relative overflow-hidden">
-                         {/* Paper Chits Visual */}
-                         {unpulledCount > 0 ? (
-                            <div className="absolute bottom-0 w-full h-3/4 flex flex-wrap content-end justify-center gap-1 p-2 opacity-70">
-                                {Array.from({length: Math.min(unpulledCount, 15)}).map((_, i) => (
-                                    <div key={i} className="w-8 h-8 bg-white/20 border border-white/40 rotate-12 rounded-sm" style={{transform: `rotate(${Math.random()*90}deg)`}}></div>
-                                ))}
-                            </div>
-                         ) : (
-                             <span className="text-gray-600 font-bold">EMPTY</span>
-                         )}
-                         <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gold font-caveat text-3xl drop-shadow-md z-10 whitespace-nowrap">Tap to Pull</span>
-                    </div>
-                </div>
-            )}
+            {pulled ? (<div className="bg-white/10 p-8 rounded-xl border-2 border-gold text-center animate-fadeIn w-full max-w-sm"><Sparkles className="text-gold mx-auto mb-4" size={40} /><p className="text-3xl text-white font-caveat">{pulled}</p><button onClick={() => setPulled(null)} className="mt-6 text-gray-400 text-sm underline">Put away</button></div>) : (<div onClick={handlePull} className="relative w-40 h-56 cursor-pointer group"><div className="absolute -top-2 left-1/2 -translate-x-1/2 w-32 h-6 bg-gold rounded-sm shadow-md z-20"></div><div className="w-full h-full bg-white/5 border-4 border-gray-600 rounded-b-[3rem] rounded-t-lg backdrop-blur-sm flex items-center justify-center shadow-[0_0_30px_rgba(0,0,0,0.5)] group-hover:border-gold transition-all relative overflow-hidden">{unpulledCount > 0 ? (<div className="absolute bottom-0 w-full h-3/4 flex flex-wrap content-end justify-center gap-1 p-2 opacity-70">{Array.from({length: Math.min(unpulledCount, 15)}).map((_, i) => (<div key={i} className="w-8 h-8 bg-white/20 border border-white/40 rotate-12 rounded-sm" style={{transform: `rotate(${Math.random()*90}deg)`}}></div>))}</div>) : (<span className="text-gray-600 font-bold">EMPTY</span>)}<span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gold font-caveat text-3xl drop-shadow-md z-10 whitespace-nowrap">Tap to Pull</span></div></div>)}
             <div className="w-full max-w-sm mt-4"><textarea className="w-full bg-black border border-gray-700 rounded p-4 text-white mb-2 focus:border-burgundy outline-none" placeholder="Whisper a fantasy..." value={wish} onChange={e => setWish(e.target.value)} /><button onClick={handleDrop} className="w-full bg-burgundy text-white py-3 rounded font-bold hover:bg-red-800 transition">Drop in Jar</button></div>
             {history.length > 0 && (<div className="w-full max-w-sm mt-8"><h3 className="text-gray-500 text-sm uppercase tracking-widest mb-4">Pulled Memories</h3><div className="space-y-3">{history.map(item => (<HistoryItem key={item.id} item={item} onReturn={handleReturn} onDeleteRequest={setDeleteTarget} />))}</div></div>)}
             {deleteTarget && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Memory?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteTarget(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
@@ -431,28 +435,59 @@ const FantasyJar = () => {
     );
 };
 
-const Spin = () => {
-    const [cards, setCards] = useState([]);
-    const [sections, setSections] = useState([]);
-    const [activeSection, setActiveSection] = useState(null);
-    const [rotation, setRotation] = useState(0);
-    const [isSpinning, setIsSpinning] = useState(false);
-    const [winner, setWinner] = useState(null); 
-    const [showHistory, setShowHistory] = useState(false);
-    useEffect(() => { const fetchData = async () => { const token = localStorage.getItem('token'); const headers = { Authorization: `Bearer ${token}` }; try { const [cardsRes, sectionsRes] = await Promise.all([fetch(`${API_URL}/cards`, { headers }), fetch(`${API_URL}/sections`, { headers })]); if (cardsRes.ok && sectionsRes.ok) { setCards(await cardsRes.json()); setSections(await sectionsRes.json()); } } catch (e) { console.error(e); } }; fetchData(); }, []);
-    const wheelGradient = `conic-gradient(${Array.from({length: 16}).map((_, i) => `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`).join(', ')})`;
-    const handleSpin = () => { if (isSpinning) return; const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; }); if (pool.length === 0) { alert("No cards in this section!"); return; } setIsSpinning(true); setWinner(null); const SEGMENT_COUNT = 16; const slots = Array.from({length: SEGMENT_COUNT}, () => pool[Math.floor(Math.random() * pool.length)]); const winningIndex = Math.floor(Math.random() * SEGMENT_COUNT); const winningCard = slots[winningIndex]; const segmentAngle = 360 / 16; const offset = (winningIndex * segmentAngle) + (segmentAngle / 2); const target = 360 - offset; let delta = target - (rotation % 360); if (delta < 0) delta += 360; const totalRotation = rotation + (5 * 360) + delta; setRotation(totalRotation); setTimeout(() => { setIsSpinning(false); setWinner(winningCard); fetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000); };
-    return (
-        <div className="flex flex-col items-center w-full min-h-full py-4">
-            <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">{sections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={null} />))}</div>
-            <div className="relative w-80 h-80 shrink-0">
-                <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
-                <div className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden" style={{ transform: `rotate(${rotation}deg)`, transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)', background: wheelGradient }}>{Array.from({length: 16}).map((_, i) => (<div key={i} className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom" style={{ transform: `rotate(${i * 22.5 + 11.25}deg)` }}><span className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl">{i + 1}</span></div>))}</div>
-                <button onClick={handleSpin} disabled={isSpinning} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-gold border-4 border-burgundy shadow-lg flex items-center justify-center z-10 active:scale-95 transition"><span className="text-burgundy font-black text-xl font-sans tracking-widest">SPIN</span></button>
-            </div>
-            {winner && (<div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"><div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden bg-black"><button onClick={() => setWinner(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full"><X size={24}/></button><div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center">{showHistory ? (<HistoryList cardId={winner.id} onClose={() => setShowHistory(false)}/>) : (<img src={winner.filepath} alt="Winner" className="max-w-full max-h-full object-contain"/>)}</div><div className="h-[20%] flex flex-col items-center justify-center p-4"><h3 className="text-gold text-2xl font-caveat mb-2">The Wheel has Spoken!</h3><button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-white/50 text-sm hover:text-white"><Heart size={16} className="fill-lipstick text-lipstick"/><span>Revealed {winner.scratched_count + 1} times</span></button></div></div></div>)}
-        </div>
-    );
+const Extras = () => { return ( <div className="p-4 pb-24 space-y-12"><LocationUnlocks /><div className="border-t border-gray-800"></div><FantasyJar /></div> ); };
+
+const Home = () => {
+  const [cards, setCards] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [activeSection, setActiveSection] = useState(null); 
+  const [selectedCard, setSelectedCard] = useState(null); 
+  const [showHistory, setShowHistory] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
+  const [sectionMenu, setSectionMenu] = useState(null); 
+  const [isCreatingSection, setIsCreatingSection] = useState(false);
+  const [newSectionName, setNewSectionName] = useState("");
+  const [renameText, setRenameText] = useState("");
+  const [isRenamingSection, setIsRenamingSection] = useState(false);
+  const fetchData = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const headers = { Authorization: `Bearer ${token}` };
+      const [cardsRes, sectionsRes] = await Promise.all([
+        fetch(`${API_URL}/cards`, { headers }),
+        fetch(`${API_URL}/sections`, { headers })
+      ]);
+      if (cardsRes.ok && sectionsRes.ok) {
+        const cardsData = await cardsRes.json();
+        const sectionsData = await sectionsRes.json();
+        if(Array.isArray(cardsData)) setCards(prev => {
+            if(prev.length !== cardsData.length) return cardsData.sort(() => Math.random() - 0.5);
+            return cardsData.map(c => { const old = prev.find(p => p.id === c.id); return old ? {...c} : c; });
+        });
+        if(Array.isArray(sectionsData)) setSections(sectionsData);
+      }
+    } catch (e) { console.error("Sync error", e); }
+  };
+  useEffect(() => { fetchData(); const interval = setInterval(fetchData, 5000); return () => clearInterval(interval); }, []);
+  const handleUpload = async (e) => { const files = Array.from(e.target.files); if (files.length === 0) return; for (const file of files) { const formData = new FormData(); formData.append('file', file); if (activeSection) formData.append('section_id', activeSection); await fetch(`${API_URL}/cards`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: formData }); } fetchData(); };
+  const handleCreateSection = async () => { if (!newSectionName.trim()) return; await fetch(`${API_URL}/sections`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: newSectionName }) }); setNewSectionName(""); setIsCreatingSection(false); fetchData(); };
+  const handleRenameSection = async () => { if (!sectionMenu || !renameText.trim()) return; await fetch(`${API_URL}/sections/${sectionMenu.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: renameText }) }); setSectionMenu(null); setIsRenamingSection(false); fetchData(); };
+  const handleDeleteSection = async () => { if (!sectionMenu) return; await fetch(`${API_URL}/sections/${sectionMenu.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setSectionMenu(null); if (activeSection === sectionMenu.id) setActiveSection(null); fetchData(); };
+  const handleReveal = async (id) => { await fetch(`${API_URL}/cards/${id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setCards(prev => prev.map(c => c.id === id ? {...c, scratched_count: c.scratched_count + 1} : c)); };
+  const handleDeleteCard = async () => { if (!deleteId) return; await fetch(`${API_URL}/cards/${deleteId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setDeleteId(null); fetchData(); };
+  const shuffleCards = () => { setCards([...cards].sort(() => Math.random() - 0.5)); };
+  const filteredCards = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; });
+  return (
+    <div className="pb-24 px-4 w-full">
+      <div className="flex gap-2 overflow-x-auto p-2 pb-4 mb-4 no-scrollbar -mx-2">{sections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={(sec) => { setSectionMenu(sec); setRenameText(sec.title); setIsRenamingSection(false); }} />))}<button onClick={() => setIsCreatingSection(true)} className="px-3 py-2 rounded-full bg-gray-800 border border-gray-600 text-gold hover:bg-gray-700 flex items-center shrink-0"><Plus size={18} /></button></div>
+      <div className="flex justify-between items-center mb-6 bg-black/40 p-4 rounded-xl backdrop-blur-sm border-b border-gold/20"><div className="flex gap-4"><button onClick={shuffleCards} className="flex items-center gap-2 text-gold hover:text-white"><Shuffle size={20}/> Shuffle</button></div><label className="flex items-center gap-2 bg-burgundy px-4 py-2 rounded-full cursor-pointer hover:bg-lipstick transition shadow-lg"><Upload size={18} className="text-white"/><span className="text-white text-sm font-bold">Add Cards</span><input type="file" className="hidden" accept="image/*" multiple onChange={handleUpload} /></label></div>
+      {filteredCards.length === 0 ? (<div className="flex flex-col items-center justify-center mt-10 text-gray-500 gap-4"><Folder size={48} /><p>No cards in this section yet.</p></div>) : (<div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fadeIn">{filteredCards.map(card => (<CardItem key={card.id} card={card} onDeleteRequest={setDeleteId} onClick={setSelectedCard} />))}</div>)}
+      {isCreatingSection && (<div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-gold p-6 rounded-xl w-72"><h3 className="text-gold text-lg mb-4">New Section</h3><input autoFocus className="w-full p-2 bg-black border border-gray-600 rounded text-white mb-4" placeholder="Section Name" value={newSectionName} onChange={e => setNewSectionName(e.target.value)} /><div className="flex justify-end gap-2"><button onClick={() => setIsCreatingSection(false)} className="px-3 py-1 text-gray-400">Cancel</button><button onClick={handleCreateSection} className="px-4 py-2 bg-gold text-black rounded font-bold">Create</button></div></div></div>)}
+      {sectionMenu && (<div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-72 text-center shadow-2xl"><h3 className="text-gold text-xl mb-4 truncate">{sectionMenu.title}</h3>{isRenamingSection ? (<div className="space-y-4"><input autoFocus className="w-full p-2 bg-black border border-gold rounded text-white" value={renameText} onChange={(e) => setRenameText(e.target.value)} /><div className="flex justify-center gap-2"><button onClick={() => setIsRenamingSection(false)} className="px-3 py-2 rounded bg-gray-700 text-white text-sm">Cancel</button><button onClick={handleRenameSection} className="px-3 py-2 rounded bg-gold text-black text-sm font-bold">Save</button></div></div>) : (<div className="flex flex-col gap-3"><button onClick={() => setIsRenamingSection(true)} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-white w-full"><Edit2 size={18} /> Rename</button><button onClick={handleDeleteSection} className="flex items-center justify-center gap-2 p-3 rounded bg-red-900/50 hover:bg-red-900 text-white w-full"><Trash2 size={18} /> Delete</button><button onClick={() => setSectionMenu(null)} className="p-2 mt-2 rounded text-gray-400 hover:text-white text-sm">Cancel</button></div>)}</div></div>)}
+      {selectedCard && (<div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"><div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black animate-fadeIn"><button onClick={() => setSelectedCard(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button><div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center">{showHistory ? (<HistoryList cardId={selectedCard.id} onClose={() => setShowHistory(false)}/>) : (<RevealCard id={selectedCard.id} image={selectedCard.filepath} onRevealComplete={() => handleReveal(selectedCard.id)} />)}</div><div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4"><button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-gold text-xl bg-white/5 px-6 py-2 rounded-full border border-gold/30 hover:bg-gold/20 transition active:scale-95"><Heart size={20} className={showHistory ? "text-gray-400" : "fill-lipstick text-lipstick"}/><span>{showHistory ? "Back to Card" : `Revealed ${cards.find(c => c.id === selectedCard.id)?.scratched_count || 0} times`}</span></button></div></div></div>)}
+      {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete this card?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDeleteCard} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
+    </div>
+  );
 };
 
 const Settings = ({ user, logout }) => {
