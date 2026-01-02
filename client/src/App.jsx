@@ -285,10 +285,13 @@ const Gallery = ({ title, endpoint, icon }) => {
                 <button onClick={() => setIsEditing(!isEditing)} className={`flex items-center gap-2 px-4 py-2 rounded-full border transition ${isEditing ? 'bg-gold text-black border-gold' : 'bg-transparent text-gray-400 border-gray-700'}`}><Edit2 size={16}/> {isEditing ? 'Done' : 'Manage'}</button>
             </div>
             {isEditing && (
+                <>
+                <div className="w-full mb-2 text-center text-xs text-gray-500">Long press an item to delete</div>
                 <div className="w-full grid grid-cols-3 gap-2 animate-fadeIn">
                     <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40"><Plus className="text-burgundy"/><span className="text-xs text-burgundy mt-1">Add</span><input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} /></label>
                     {items.map(item => (<GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />))}
                 </div>
+                </>
             )}
             {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Item?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
         </div>
@@ -412,10 +415,7 @@ const FantasyJar = () => {
     const [unpulledCount, setUnpulledCount] = useState(0); 
     const [history, setHistory] = useState([]);
     const [deleteTarget, setDeleteTarget] = useState(null);
-    const fetchData = () => {
-        fetch(`${API_URL}/fantasies`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setUnpulledCount(data.length); });
-        fetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setHistory(data); });
-    };
+    const fetchData = () => { fetch(`${API_URL}/fantasies`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setUnpulledCount(data.length); }); fetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setHistory(data); }); };
     useEffect(() => { fetchData(); }, []);
     const handleDrop = async () => { if(!wish.trim()) return; await fetch(`${API_URL}/fantasies`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ text: wish }) }); setWish(""); alert("Wish dropped in the jar! 🤫"); fetchData(); };
     const handlePull = async () => { const res = await fetch(`${API_URL}/fantasies/pull`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); const data = await res.json(); if(data.empty) { alert("The jar is empty! Add more fantasies."); } else { setPulled(data.text); fetchData(); } };
@@ -530,13 +530,30 @@ const Layout = ({ children, user, logout }) => {
   const [resetInput, setResetInput] = useState("");
   const handleReload = async () => { if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (const registration of registrations) await registration.unregister(); } window.location.reload(true); };
   const handleResetSubmit = async () => { if (resetInput !== 'RESET') { alert("Please type 'RESET' exactly."); return; } if (resetStep === 1) { setResetStep(2); setResetInput(""); } else { await fetch(`${API_URL}/reset-app`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); alert("App has been reset."); setShowResetModal(false); setResetStep(1); setResetInput(""); handleReload(); } };
-  const handleExport = async () => { const link = document.createElement('a'); link.href = `${API_URL}/export?token=${localStorage.getItem('token')}`; link.setAttribute('download', 'privy_backup.zip'); document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+  const handleExport = async () => { 
+      try {
+        const res = await fetch(`${API_URL}/export?token=${localStorage.getItem('token')}`);
+        if(!res.ok) throw new Error("Server Error");
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `privy_backup_${new Date().toISOString().split('T')[0]}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch(e) { alert("Export Failed. Make sure 'zip' is installed on server."); }
+  };
+  
   return (
     <div className="fixed inset-0 w-full h-full bg-black text-white font-caveat selection:bg-lipstick flex flex-col overflow-hidden">
       <header className="flex-none w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-2 flex justify-between items-center shadow-lg"><div className="flex items-center gap-3"><img src="/apple-touch-icon.png" alt="Logo" className="w-10 h-10 rounded-full border border-gold shadow-md" /><div className="flex flex-col"><h1 className="text-2xl text-gold tracking-widest leading-none">Privy</h1><span className="text-xl text-gray-400 -mt-1">@{user?.username}</span></div></div><div className="flex items-center gap-4"><button onClick={handleReload} className="text-gold/80 hover:text-gold focus:outline-none active:rotate-180 transition-transform duration-500"><RefreshCw size={24} /></button><button onClick={() => setMenuOpen(!menuOpen)} className="text-gold focus:outline-none">{menuOpen ? <X size={28} /> : <div className="space-y-1"><div className="w-6 h-0.5 bg-gold"></div><div className="w-6 h-0.5 bg-gold"></div><div className="w-6 h-0.5 bg-gold"></div></div>}</button></div></header>
       {menuOpen && (<div className="absolute top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-50 p-4 shadow-2xl transform transition-transform"><div className="flex flex-col gap-4 text-xl"><Link to="/settings" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><User size={20}/> Profile</Link><Link to="/notifications" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><Bell size={20}/> Notifications</Link><button onClick={handleExport} className="flex items-center gap-3 p-2 text-gold hover:bg-white/10 rounded w-full text-left"><Download size={20}/> Export Data</button><div className="my-2 border-t border-gray-700"></div><button onClick={() => { setShowResetModal(true); setMenuOpen(false); }} className="flex items-center gap-3 p-2 text-red-400 hover:bg-white/10 rounded"><RotateCcw size={20}/> Reset App</button><button onClick={logout} className="flex items-center gap-3 p-2 text-lipstick hover:bg-white/10 rounded"><LogOut size={20}/> Logout</button></div></div>)}
       <main className="flex-1 overflow-y-auto bg-gradient-to-b from-black via-eggplant/20 to-black relative w-full">{children}</main>
-      <nav className="flex-none w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50"><Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}><Layers size={24} /><span className="text-xs">Cards</span></Link><Link to="/spin" className={`flex flex-col items-center ${location.pathname === '/spin' ? 'text-lipstick' : 'text-gray-500'}`}><Aperture size={24} /><span className="text-xs">Spin</span></Link><Link to="/dice" className={`flex flex-col items-center ${location.pathname === '/dice' ? 'text-lipstick' : 'text-gray-500'}`}><Dices size={24} /><span className="text-xs">Dice</span></Link><Link to="/extras" className={`flex flex-col items-center ${location.pathname === '/extras' ? 'text-lipstick' : 'text-gray-500'}`}><Sparkles size={24} /><span className="text-xs">Extras</span></Link><Link to="/books" className={`flex flex-col items-center ${location.pathname === '/books' ? 'text-lipstick' : 'text-gray-500'}`}><Book size={24} /><span className="text-xs">Books</span></Link><Link to="/toys" className={`flex flex-col items-center ${location.pathname === '/toys' ? 'text-lipstick' : 'text-gray-500'}`}><Zap size={24} /><span className="text-xs">Toys</span></Link><Link to="/lingerie" className={`flex flex-col items-center ${location.pathname === '/lingerie' ? 'text-lipstick' : 'text-gray-500'}`}><Shirt size={24} /><span className="text-xs">Lingerie</span></Link><Link to="/protection" className={`flex flex-col items-center ${location.pathname === '/protection' ? 'text-lipstick' : 'text-gray-500'}`}><Shield size={24} /><span className="text-xs">Safety</span></Link></nav>
+      <nav className="flex-none w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50"><Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}><Layers size={24} /><span className="text-xs">Cards</span></Link><Link to="/spin" className={`flex flex-col items-center ${location.pathname === '/spin' ? 'text-lipstick' : 'text-gray-500'}`}><Aperture size={24} /><span className="text-xs">Spin</span></Link><Link to="/dice" className={`flex flex-col items-center ${location.pathname === '/dice' ? 'text-lipstick' : 'text-gray-500'}`}><Dices size={24} /><span className="text-xs">Dice</span></Link><Link to="/extras" className={`flex flex-col items-center ${location.pathname === '/extras' ? 'text-lipstick' : 'text-gray-500'}`}><Sparkles size={24} /><span className="text-xs">Extras</span></Link><Link to="/books" className={`flex flex-col items-center ${location.pathname === '/books' ? 'text-lipstick' : 'text-gray-500'}`}><Book size={24} /><span className="text-xs">Books</span></Link>
+      <Link to="/toys" className={`flex flex-col items-center ${location.pathname === '/toys' ? 'text-lipstick' : 'text-gray-500'}`}><Zap size={24} /><span className="text-xs">Toys</span></Link>
+      <Link to="/lingerie" className={`flex flex-col items-center ${location.pathname === '/lingerie' ? 'text-lipstick' : 'text-gray-500'}`}><Shirt size={24} /><span className="text-xs">Lingerie</span></Link>
+      <Link to="/protection" className={`flex flex-col items-center ${location.pathname === '/protection' ? 'text-lipstick' : 'text-gray-500'}`}><Shield size={24} /><span className="text-xs">Safety</span></Link></nav>
       {showResetModal && (<div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"><div className="bg-gray-900 border border-red-500 p-6 rounded-xl w-80 text-center shadow-2xl"><AlertTriangle size={48} className="mx-auto text-red-500 mb-4" /><h3 className="text-white text-2xl mb-2 font-bold">App Reset</h3><p className="text-gray-400 text-sm mb-6">{resetStep === 1 ? "This will reset all scratch counts and history to zero. This cannot be undone." : "Are you really sure? This is your last chance."}</p><input className="w-full p-3 bg-black border border-gray-700 rounded text-white text-center tracking-widest mb-4 uppercase" placeholder="Type RESET" value={resetInput} onChange={e => setResetInput(e.target.value.toUpperCase())} /><div className="flex justify-center gap-4"><button onClick={() => { setShowResetModal(false); setResetStep(1); setResetInput(""); }} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleResetSubmit} className={`px-4 py-2 rounded font-bold text-white ${resetInput === 'RESET' ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 cursor-not-allowed'}`} disabled={resetInput !== 'RESET'}>{resetStep === 1 ? "Next Step" : "CONFIRM RESET"}</button></div></div></div>)}
     </div>
   );
@@ -546,5 +563,16 @@ export default function App() {
   const [user, setUser] = useState(null);
   useEffect(() => { try { const saved = localStorage.getItem('user'); if (saved) setUser(JSON.parse(saved)); } catch (e) { localStorage.clear(); } }, []);
   const logout = () => { localStorage.removeItem('token'); localStorage.removeItem('user'); setUser(null); };
-  return (<ErrorBoundary>{!user ? (<Auth setUser={setUser} />) : (<Router><Layout user={user} logout={logout}><Routes><Route path="/" element={<Home />} /><Route path="/spin" element={<Spin />} /><Route path="/dice" element={<DiceGame />} /><Route path="/extras" element={<Extras />} /><Route path="/books" element={<Books />} /><Route path="/toys" element={<Gallery title="Toys" endpoint="toys" icon={<Zap size={32}/>} />} /><Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<Shirt size={32}/>} />} /><Route path="/protection" element={<Protection />} /><Route path="/settings" element={<Settings user={user} logout={logout} />} /><Route path="/notifications" element={<Notifications />} /></Routes></Layout></Router>)}</ErrorBoundary>);
+  return (<ErrorBoundary>{!user ? (<Auth setUser={setUser} />) : (<Router><Layout user={user} logout={logout}><Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/spin" element={<Spin />} />
+      <Route path="/dice" element={<DiceGame />} />
+      <Route path="/extras" element={<Extras />} />
+      <Route path="/books" element={<Books />} />
+      <Route path="/toys" element={<Gallery title="Toys" endpoint="toys" icon={<Zap size={32}/>} />} />
+      <Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<Shirt size={32}/>} />} />
+      <Route path="/protection" element={<Protection />} />
+      <Route path="/settings" element={<Settings user={user} logout={logout} />} />
+      <Route path="/notifications" element={<Notifications />} />
+  </Routes></Layout></Router>)}</ErrorBoundary>);
 }
