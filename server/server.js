@@ -1,6 +1,6 @@
 /**
  * Privy Backend - Node.js
- * COMPLETE VERSION - Includes Auth, Cards, Dice, Locations, Fantasies, Books, Ntfy
+ * COMPLETE VERSION
  */
 
 const express = require('express');
@@ -35,36 +35,29 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 
 // Init Tables
 db.serialize(() => {
-    // Core Tables
     db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, name TEXT, age INTEGER, gender TEXT, avatar TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, scratched_count INTEGER DEFAULT 0, section_id INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS card_history (id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(card_id) REFERENCES cards(id))`);
     db.run(`CREATE TABLE IF NOT EXISTS books (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, filepath TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
-    
-    // Dice Tables
     db.run(`CREATE TABLE IF NOT EXISTS dice_options (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, text TEXT, role TEXT DEFAULT 'wife')`);
-    
-    // Location Tables
     db.run(`CREATE TABLE IF NOT EXISTS location_unlocks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, unlocked_at DATETIME, count INTEGER DEFAULT 0)`);
-    
-    // Fantasy Jar Tables
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, pulled_at DATETIME)`);
 
-    // Migrations (Run safely to ensure columns exist)
+    // Migrations
     try {
         db.run(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`, () => {});
         db.run(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`, () => {});
-    } catch (e) { console.log("Migrations skipped (already applied)"); }
+    } catch (e) {}
 
-    // Seed Data: Dice
+    // Seed Data
     db.get("SELECT count(*) as count FROM dice_options", (err, row) => {
         if (row && row.count === 0) {
             const defaults = [
-                ['act', 'Kiss', 'wife'], ['act', 'Lick', 'wife'], ['act', 'Massage', 'wife'], 
+                ['act', 'Kiss', 'wife'], ['act', 'Lick', 'wife'], ['act', 'Massage', 'wife'],
                 ['location', 'Neck', 'wife'], ['location', 'Ears', 'wife'], ['location', 'Thighs', 'wife'],
-                ['act', 'Kiss', 'husband'], ['act', 'Lick', 'husband'], ['act', 'Massage', 'husband'], 
+                ['act', 'Kiss', 'husband'], ['act', 'Lick', 'husband'], ['act', 'Massage', 'husband'],
                 ['location', 'Neck', 'husband'], ['location', 'Ears', 'husband'], ['location', 'Thighs', 'husband']
             ];
             const stmt = db.prepare("INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)");
@@ -73,7 +66,6 @@ db.serialize(() => {
         }
     });
 
-    // Seed Data: Locations
     db.get("SELECT count(*) as count FROM location_unlocks", (err, row) => {
         if (row && row.count === 0) {
             const defaults = ['Kitchen', 'Shower', 'Car', 'Balcony', 'Hotel', 'Woods', 'Living Room', 'Stairs'];
@@ -84,7 +76,7 @@ db.serialize(() => {
     });
 });
 
-// --- Ntfy Logic ---
+// --- Helper: Ntfy ---
 const sendNtfy = (cardId) => {
     db.all(`SELECT * FROM settings WHERE key IN ('ntfy_url', 'ntfy_topic')`, [], (err, rows) => {
         if (err || !rows) return;
@@ -102,8 +94,7 @@ const sendNtfy = (cardId) => {
                     const fileBuffer = fs.readFileSync(absPath);
                     const { size } = fs.statSync(absPath);
                     const ext = path.extname(absPath) || '.jpg';
-                    const timestamp = Date.now();
-                    const filename = `card_${cardId}_${timestamp}${ext}`; // Unique filename to bust cache
+                    const filename = `card_${cardId}_${Date.now()}${ext}`; // Unique Name
 
                     let contentType = 'application/octet-stream';
                     if (ext === '.png') contentType = 'image/png';
@@ -111,7 +102,7 @@ const sendNtfy = (cardId) => {
 
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
                     const ntfyUrl = new URL(`${baseUrl}/${settings.ntfy_topic}`);
-                    ntfyUrl.searchParams.append('message', "Today's Position \uD83D\uDE09"); // 😉
+                    ntfyUrl.searchParams.append('message', "Today's Position \uD83D\uDE09");
                     ntfyUrl.searchParams.append('title', 'Privy: Card Revealed!');
                     ntfyUrl.searchParams.append('tags', 'heart,fire,camera');
                     ntfyUrl.searchParams.append('priority', 'high');
@@ -128,7 +119,6 @@ const sendNtfy = (cardId) => {
     });
 };
 
-// --- Upload Config ---
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const type = req.path.includes('book') ? 'books' : 'cards';
@@ -142,37 +132,26 @@ const storage = multer.diskStorage({
     }
 });
 const upload = multer({ storage });
-
 const auth = (req, res, next) => {
     const token = req.headers['authorization'];
     if (!token) return res.status(403).json({ error: 'No token' });
-    try {
-        const decoded = jwt.verify(token.split(' ')[1], SECRET_KEY);
-        req.user = decoded;
-        next();
-    } catch (e) { res.status(401).json({ error: 'Unauthorized' }); }
+    try { const decoded = jwt.verify(token.split(' ')[1], SECRET_KEY); req.user = decoded; next(); } catch (e) { res.status(401).json({ error: 'Unauthorized' }); }
 };
 
-// --- ROUTES ---
-
-// 1. Auth & User
+// --- Routes ---
 app.post('/api/register', (req, res) => {
     const { username, password, name, age, gender } = req.body;
     const hash = bcrypt.hashSync(password, 8);
-    db.run(`INSERT INTO users (username, password, name, age, gender) VALUES (?,?,?,?,?)`,
-        [username, hash, name, age, gender],
-        function(err) {
-            if (err) return res.status(400).json({ error: 'Username taken' });
-            res.json({ success: true, id: this.lastID });
-        }
-    );
+    db.run(`INSERT INTO users (username, password, name, age, gender) VALUES (?,?,?,?,?)`, [username, hash, name, age, gender], function(err) {
+        if (err) return res.status(400).json({ error: 'Username taken' });
+        res.json({ success: true, id: this.lastID });
+    });
 });
 
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     db.get(`SELECT * FROM users WHERE username = ?`, [username], (err, user) => {
-        if (!user || !bcrypt.compareSync(password, user.password)) 
-            return res.status(400).json({ error: 'Invalid credentials' });
+        if (!user || !bcrypt.compareSync(password, user.password)) return res.status(400).json({ error: 'Invalid credentials' });
         const token = jwt.sign({ id: user.id, name: user.name }, SECRET_KEY);
         res.json({ token, user });
     });
@@ -182,17 +161,10 @@ app.put('/api/user', auth, (req, res) => {
     const { name, age, gender, password } = req.body;
     let sql = `UPDATE users SET name = ?, age = ?, gender = ? WHERE id = ?`;
     let params = [name, age, gender, req.user.id];
-    if (password) {
-        sql = `UPDATE users SET name = ?, age = ?, gender = ?, password = ? WHERE id = ?`;
-        params = [name, age, gender, bcrypt.hashSync(password, 8), req.user.id];
-    }
-    db.run(sql, params, (err) => {
-        if (err) return res.status(500).json({error: err.message});
-        res.json({success: true});
-    });
+    if (password) { sql = `UPDATE users SET name = ?, age = ?, gender = ?, password = ? WHERE id = ?`; params = [name, age, gender, bcrypt.hashSync(password, 8), req.user.id]; }
+    db.run(sql, params, (err) => { if (err) return res.status(500).json({error: err.message}); res.json({success: true}); });
 });
 
-// 2. Settings & Notifications
 app.get('/api/settings', auth, (req, res) => {
     db.all(`SELECT * FROM settings`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -215,104 +187,52 @@ app.put('/api/settings', auth, (req, res) => {
 app.post('/api/settings/test', auth, (req, res) => {
     const { ntfy_url, ntfy_topic } = req.body;
     if (!ntfy_url || !ntfy_topic) return res.status(400).json({ error: 'Missing Ntfy config' });
-
     const baseUrl = ntfy_url.replace(/\/$/, '');
     const url = `${baseUrl}/${ntfy_topic}`;
-
-    if (typeof fetch !== 'function') return res.status(500).json({error: 'Server fetch support missing'});
-
-    fetch(url, {
-        method: 'POST',
-        body: "Privy Notification Test Successful! 🎉",
-        headers: { 'Title': 'Privy Test', 'Tags': 'tada,check_mark' }
-    })
-    .then(response => {
-        if (response.ok) res.json({ success: true });
-        else res.status(500).json({ error: `Ntfy Error: ${response.status}` });
-    })
+    if (typeof fetch !== 'function') return res.status(500).json({error: 'Fetch missing'});
+    fetch(url, { method: 'POST', body: "Privy Notification Test Successful! 🎉", headers: { 'Title': 'Privy Test', 'Tags': 'tada,check_mark' } })
+    .then(r => { if (r.ok) res.json({ success: true }); else res.status(500).json({ error: `Ntfy Error: ${r.status}` }); })
     .catch(err => res.status(500).json({ error: err.message }));
 });
 
-// 3. Sections & Cards
 app.get('/api/sections', auth, (req, res) => {
-    db.all(`SELECT * FROM sections`, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+    db.all(`SELECT * FROM sections`, [], (err, rows) => { if (err) return res.status(500).json({ error: err.message }); res.json(rows); });
 });
 
 app.post('/api/sections', auth, (req, res) => {
     const { title } = req.body;
-    db.run(`INSERT INTO sections (title) VALUES (?)`, [title], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, title });
-    });
+    db.run(`INSERT INTO sections (title) VALUES (?)`, [title], function(err) { if (err) return res.status(500).json({ error: err.message }); res.json({ id: this.lastID, title }); });
 });
 
 app.put('/api/sections/:id', auth, (req, res) => {
     const { title } = req.body;
-    db.run(`UPDATE sections SET title = ? WHERE id = ?`, [title, req.params.id], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-    });
+    db.run(`UPDATE sections SET title = ? WHERE id = ?`, [title, req.params.id], (err) => { if (err) return res.status(500).json({ error: err.message }); res.json({ success: true }); });
 });
 
 app.delete('/api/sections/:id', auth, (req, res) => {
     const id = req.params.id;
     db.all(`SELECT filepath FROM cards WHERE section_id = ?`, [id], (err, rows) => {
-        if(rows) {
-            rows.forEach(row => {
-                try {
-                    const cleanPath = row.filepath.replace('/uploads/', '');
-                    const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
-                    if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
-                } catch(e) {}
-            });
-        }
-        db.serialize(() => {
-            db.run(`DELETE FROM cards WHERE section_id = ?`, [id]);
-            db.run(`DELETE FROM sections WHERE id = ?`, [id], (err) => {
-                if (err) return res.status(500).json({ error: err.message });
-                res.json({ success: true });
-            });
-        });
+        if(rows) { rows.forEach(row => { try { const cleanPath = row.filepath.replace('/uploads/', ''); const absPath = path.join(DATA_DIR, 'uploads', cleanPath); if (fs.existsSync(absPath)) fs.unlinkSync(absPath); } catch(e) {} }); }
+        db.serialize(() => { db.run(`DELETE FROM cards WHERE section_id = ?`, [id]); db.run(`DELETE FROM sections WHERE id = ?`, [id], (err) => { if (err) return res.status(500).json({ error: err.message }); res.json({ success: true }); }); });
     });
 });
 
 app.get('/api/cards', auth, (req, res) => {
-    db.all(`SELECT * FROM cards`, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+    db.all(`SELECT * FROM cards`, [], (err, rows) => { if (err) return res.status(500).json({ error: err.message }); res.json(rows); });
 });
 
 app.post('/api/cards', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error: 'No file'});
     const filepath = `/uploads/cards/${req.file.filename}`;
     const sectionId = req.body.section_id || null;
-    db.run(`INSERT INTO cards (filepath, section_id) VALUES (?, ?)`, [filepath, sectionId], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, filepath });
-    });
+    db.run(`INSERT INTO cards (filepath, section_id) VALUES (?, ?)`, [filepath, sectionId], function(err) { if (err) return res.status(500).json({ error: err.message }); res.json({ id: this.lastID, filepath }); });
 });
 
 app.delete('/api/cards/:id', auth, (req, res) => {
     const id = req.params.id;
     db.get(`SELECT filepath FROM cards WHERE id = ?`, [id], (err, row) => {
-        if (row) {
-            try {
-                const cleanPath = row.filepath.replace('/uploads/', '');
-                const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
-                if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
-            } catch(e) {}
-        }
-        db.serialize(() => {
-            db.run(`DELETE FROM card_history WHERE card_id = ?`, [id]);
-            db.run(`DELETE FROM cards WHERE id = ?`, [id], (err) => {
-                if(err) return res.status(500).json({error: err.message});
-                res.json({success: true});
-            });
-        });
+        if (row) { try { const cleanPath = row.filepath.replace('/uploads/', ''); const absPath = path.join(DATA_DIR, 'uploads', cleanPath); if (fs.existsSync(absPath)) fs.unlinkSync(absPath); } catch(e) {} }
+        db.serialize(() => { db.run(`DELETE FROM card_history WHERE card_id = ?`, [id]); db.run(`DELETE FROM cards WHERE id = ?`, [id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
     });
 });
 
@@ -329,51 +249,29 @@ app.post('/api/cards/:id/scratch', auth, (req, res) => {
 });
 
 app.get('/api/cards/:id/history', auth, (req, res) => {
-    db.all(`SELECT timestamp FROM card_history WHERE card_id = ? ORDER BY timestamp DESC`, [req.params.id], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+    db.all(`SELECT timestamp FROM card_history WHERE card_id = ? ORDER BY timestamp DESC`, [req.params.id], (err, rows) => { if (err) return res.status(500).json({ error: err.message }); res.json(rows); });
 });
 
-// 4. Books
 app.get('/api/books', auth, (req, res) => {
-    db.all(`SELECT * FROM books`, [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+    db.all(`SELECT * FROM books`, [], (err, rows) => { if (err) return res.status(500).json({ error: err.message }); res.json(rows); });
 });
 
 app.post('/api/books', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error: 'No file'});
     const filepath = `/uploads/books/${req.file.filename}`;
-    db.run(`INSERT INTO books (title, filepath) VALUES (?, ?)`, [req.file.originalname, filepath], function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, filepath });
-    });
+    db.run(`INSERT INTO books (title, filepath) VALUES (?, ?)`, [req.file.originalname, filepath], function(err) { if (err) return res.status(500).json({ error: err.message }); res.json({ id: this.lastID, filepath }); });
 });
 
 app.put('/api/books/:id', auth, (req, res) => {
     const { title } = req.body;
-    db.run(`UPDATE books SET title = ? WHERE id = ?`, [title, req.params.id], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-    });
+    db.run(`UPDATE books SET title = ? WHERE id = ?`, [title, req.params.id], (err) => { if (err) return res.status(500).json({ error: err.message }); res.json({ success: true }); });
 });
 
 app.delete('/api/books/:id', auth, (req, res) => {
     const id = req.params.id;
     db.get(`SELECT filepath FROM books WHERE id = ?`, [id], (err, row) => {
-        if (row) {
-            try {
-                const cleanPath = row.filepath.replace('/uploads/', '');
-                const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
-                if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
-            } catch(e) {}
-        }
-        db.run(`DELETE FROM books WHERE id = ?`, [id], (err) => {
-            if(err) return res.status(500).json({error: err.message});
-            res.json({success: true});
-        });
+        if (row) { try { const cleanPath = row.filepath.replace('/uploads/', ''); const absPath = path.join(DATA_DIR, 'uploads', cleanPath); if (fs.existsSync(absPath)) fs.unlinkSync(absPath); } catch(e) {} }
+        db.run(`DELETE FROM books WHERE id = ?`, [id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); });
     });
 });
 
@@ -382,39 +280,25 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
     req.setTimeout(1200000); 
     db.get(`SELECT * FROM books WHERE id = ?`, [bookId], (err, book) => {
         if (err || !book) return res.status(404).json({ error: 'Book not found' });
-
         const bookPath = book.filepath.replace('/uploads/', '');
         const absBookPath = path.join(DATA_DIR, 'uploads', bookPath);
         if (!fs.existsSync(absBookPath)) return res.status(404).json({ error: 'File missing' });
-
         const sectionTitle = `From: ${book.title}`;
         db.run(`INSERT INTO sections (title) VALUES (?)`, [sectionTitle], function(err) {
-            if (err) return res.status(500).json({ error: 'Failed' });
-            
+            if (err) return res.status(500).json({ error: 'Failed to create section' });
             const sectionId = this.lastID;
             const tempDir = path.join(DATA_DIR, 'uploads', 'temp_' + Date.now());
             fs.mkdirSync(tempDir);
-            
             const cmd = `pdfimages -png "${absBookPath}" "${tempDir}/img"`;
             exec(cmd, { maxBuffer: 1024 * 1024 * 100, timeout: 600000 }, (error, stdout, stderr) => {
-                if (error) {
-                    fs.rmSync(tempDir, { recursive: true, force: true });
-                    return res.status(500).json({ error: 'Extraction failed' });
-                }
+                if (error) { fs.rmSync(tempDir, { recursive: true, force: true }); return res.status(500).json({ error: 'Extraction failed' }); }
                 fs.readdir(tempDir, (err, files) => {
-                    if (err) {
-                        fs.rmSync(tempDir, { recursive: true, force: true });
-                        return res.status(500).json({ error: 'Read failed' });
-                    }
+                    if (err) { fs.rmSync(tempDir, { recursive: true, force: true }); return res.status(500).json({ error: 'Read dir failed' }); }
                     const cardPromises = files.map(file => {
                         return new Promise((resolve) => {
                             const tempFilePath = path.join(tempDir, file);
                             const stats = fs.statSync(tempFilePath);
-                            if (stats.size < 50 * 1024) { 
-                                fs.unlinkSync(tempFilePath);
-                                resolve(null);
-                                return;
-                            }
+                            if (stats.size < 50 * 1024) { fs.unlinkSync(tempFilePath); resolve(null); return; }
                             const newFilename = `${Date.now()}_${file}`;
                             const newPath = path.join(DATA_DIR, 'uploads', 'cards', newFilename);
                             fs.renameSync(tempFilePath, newPath);
@@ -422,132 +306,35 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
                             db.run(`INSERT INTO cards (filepath, section_id) VALUES (?, ?)`, [dbPath, sectionId], function() { resolve(this.lastID); });
                         });
                     });
-                    Promise.all(cardPromises).then(() => {
-                        fs.rmSync(tempDir, { recursive: true, force: true });
-                        res.json({ success: true, sectionId, message: 'Success' });
-                    });
+                    Promise.all(cardPromises).then(() => { fs.rmSync(tempDir, { recursive: true, force: true }); res.json({ success: true, sectionId, message: 'Images extracted' }); });
                 });
             });
         });
     });
 });
 
-// 5. Dice & Locations & Fantasies
-app.get('/api/dice', auth, (req, res) => {
-    db.all(`SELECT * FROM dice_options`, [], (err, rows) => {
-        if(err) return res.status(500).json({error: err.message});
-        res.json(rows);
-    });
-});
+app.get('/api/dice', auth, (req, res) => { db.all(`SELECT * FROM dice_options`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); }); });
+app.put('/api/dice', auth, (req, res) => { const { items, role } = req.body; db.serialize(() => { db.run(`DELETE FROM dice_options WHERE role = ?`, [role || 'wife']); const stmt = db.prepare(`INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)`); items.forEach(item => stmt.run(item.type, item.text, role || 'wife')); stmt.finalize(); res.json({success: true}); }); });
 
-app.put('/api/dice', auth, (req, res) => {
-    const { items, role } = req.body;
-    db.serialize(() => {
-        db.run(`DELETE FROM dice_options WHERE role = ?`, [role || 'wife']);
-        const stmt = db.prepare(`INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)`);
-        items.forEach(item => stmt.run(item.type, item.text, role || 'wife'));
-        stmt.finalize();
-        res.json({success: true});
-    });
-});
+app.get('/api/locations', auth, (req, res) => { db.all(`SELECT * FROM location_unlocks`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); }); });
+app.post('/api/locations/:id/toggle', auth, (req, res) => { const time = new Date().toISOString(); db.run(`UPDATE location_unlocks SET count = count + 1, unlocked_at = ? WHERE id = ?`, [time, req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
+app.post('/api/locations/:id/reset', auth, (req, res) => { db.run(`UPDATE location_unlocks SET count = 0, unlocked_at = NULL WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
+app.post('/api/locations', auth, (req, res) => { const { name } = req.body; db.run(`INSERT INTO location_unlocks (name, count) VALUES (?, 0)`, [name], function(err) { if(err) return res.status(500).json({error: err.message}); res.json({id: this.lastID, name, unlocked_at: null, count: 0}); }); });
+app.delete('/api/locations/:id', auth, (req, res) => { db.run(`DELETE FROM location_unlocks WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
 
-app.get('/api/locations', auth, (req, res) => {
-    db.all(`SELECT * FROM location_unlocks`, [], (err, rows) => {
-        if(err) return res.status(500).json({error: err.message});
-        res.json(rows);
-    });
-});
-
-app.post('/api/locations/:id/toggle', auth, (req, res) => {
-    const time = new Date().toISOString();
-    db.run(`UPDATE location_unlocks SET count = count + 1, unlocked_at = ? WHERE id = ?`, [time, req.params.id], (err) => {
-        if(err) return res.status(500).json({error: err.message});
-        res.json({success: true});
-    });
-});
-
-app.post('/api/locations/:id/reset', auth, (req, res) => {
-    db.run(`UPDATE location_unlocks SET count = 0, unlocked_at = NULL WHERE id = ?`, [req.params.id], (err) => {
-        if(err) return res.status(500).json({error: err.message});
-        res.json({success: true});
-    });
-});
-
-app.post('/api/locations', auth, (req, res) => {
-    const { name } = req.body;
-    db.run(`INSERT INTO location_unlocks (name, count) VALUES (?, 0)`, [name], function(err) {
-        if(err) return res.status(500).json({error: err.message});
-        res.json({id: this.lastID, name, unlocked_at: null, count: 0});
-    });
-});
-
-app.delete('/api/locations/:id', auth, (req, res) => {
-    db.run(`DELETE FROM location_unlocks WHERE id = ?`, [req.params.id], (err) => {
-        if(err) return res.status(500).json({error: err.message});
-        res.json({success: true});
-    });
-});
-
-app.get('/api/fantasies', auth, (req, res) => {
-    db.all(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY created_at DESC`, [], (err, rows) => {
-        if(err) return res.status(500).json({error: err.message});
-        res.json(rows);
-    });
-});
-
-app.get('/api/fantasies/history', auth, (req, res) => {
-    db.all(`SELECT * FROM fantasies WHERE pulled_at IS NOT NULL ORDER BY pulled_at DESC`, [], (err, rows) => {
-        if(err) return res.status(500).json({error: err.message});
-        res.json(rows);
-    });
-});
-
-app.post('/api/fantasies', auth, (req, res) => {
-    const { text } = req.body;
-    db.run(`INSERT INTO fantasies (text) VALUES (?)`, [text], function(err) {
-        if(err) return res.status(500).json({error: err.message});
-        res.json({success: true, id: this.lastID});
-    });
-});
-
-app.post('/api/fantasies/pull', auth, (req, res) => {
-    db.get(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY RANDOM() LIMIT 1`, [], (err, row) => {
-        if(err) return res.status(500).json({error: err.message});
-        if(!row) return res.json({empty: true});
-        db.run(`UPDATE fantasies SET pulled_at = CURRENT_TIMESTAMP WHERE id = ?`, [row.id]);
-        res.json(row);
-    });
-});
-
-app.post('/api/fantasies/:id/return', auth, (req, res) => {
-    db.run(`UPDATE fantasies SET pulled_at = NULL WHERE id = ?`, [req.params.id], (err) => {
-        if(err) return res.status(500).json({error: err.message});
-        res.json({success: true});
-    });
-});
-
-app.delete('/api/fantasies/:id', auth, (req, res) => {
-    db.run(`DELETE FROM fantasies WHERE id = ?`, [req.params.id], (err) => {
-        if(err) return res.status(500).json({error: err.message});
-        res.json({success: true});
-    });
-});
+app.get('/api/fantasies', auth, (req, res) => { db.all(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY created_at DESC`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); }); });
+app.get('/api/fantasies/history', auth, (req, res) => { db.all(`SELECT * FROM fantasies WHERE pulled_at IS NOT NULL ORDER BY pulled_at DESC`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); }); });
+app.post('/api/fantasies', auth, (req, res) => { const { text } = req.body; db.run(`INSERT INTO fantasies (text) VALUES (?)`, [text], function(err) { if(err) return res.status(500).json({error: err.message}); res.json({success: true, id: this.lastID}); }); });
+app.post('/api/fantasies/pull', auth, (req, res) => { db.get(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY RANDOM() LIMIT 1`, [], (err, row) => { if(err) return res.status(500).json({error: err.message}); if(!row) return res.json({empty: true}); db.run(`UPDATE fantasies SET pulled_at = CURRENT_TIMESTAMP WHERE id = ?`, [row.id]); res.json(row); }); });
+app.post('/api/fantasies/:id/return', auth, (req, res) => { db.run(`UPDATE fantasies SET pulled_at = NULL WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
+app.delete('/api/fantasies/:id', auth, (req, res) => { db.run(`DELETE FROM fantasies WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
 
 app.post('/api/reset-app', auth, (req, res) => {
     db.serialize(() => {
         db.run(`DELETE FROM card_history`);
-        db.run(`UPDATE cards SET scratched_count = 0`, (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
-        });
+        db.run(`UPDATE cards SET scratched_count = 0`, (err) => { if (err) return res.status(500).json({ error: err.message }); res.json({ success: true }); });
     });
 });
 
-// App fallback
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../client/dist/index.html'));
-});
-
-app.listen(PORT, () => {
-    console.log(`🚀 Privy running on port ${PORT}`);
-});
+app.get('*', (req, res) => { res.sendFile(path.join(__dirname, '../client/dist/index.html')); });
+app.listen(PORT, () => { console.log(`🚀 Privy running on port ${PORT}`); });
