@@ -51,41 +51,60 @@ const useLongPress = (callback = () => {}, ms = 800) => {
 };
 
 // --- Audio ---
+let audioCtx = null;
+const initAudio = () => {
+    if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) audioCtx = new AudioContext();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+    return audioCtx;
+};
+
 const playSound = (type) => {
     try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContext) return;
-        const ctx = new AudioContext();
-        if (ctx.state === 'suspended') ctx.resume();
+        const ctx = initAudio();
+        if (!ctx) return;
+        
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
+        const now = ctx.currentTime;
+
         if (type === 'ting') {
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
-            gain.gain.setValueAtTime(0.5, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.5);
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.exponentialRampToValueAtTime(400, now + 0.5);
+            gain.gain.setValueAtTime(0.5, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+            osc.start(now);
+            osc.stop(now + 0.5);
         } else if (type === 'end') {
-            const now = ctx.currentTime;
-            const osc1 = ctx.createOscillator(); const gain1 = ctx.createGain();
-            osc1.connect(gain1); gain1.connect(ctx.destination);
-            osc1.type = 'square'; osc1.frequency.setValueAtTime(600, now);
-            gain1.gain.setValueAtTime(0.5, now); gain1.gain.linearRampToValueAtTime(0, now + 0.2);
-            osc1.start(now); osc1.stop(now + 0.2);
-            const osc2 = ctx.createOscillator(); const gain2 = ctx.createGain();
-            osc2.connect(gain2); gain2.connect(ctx.destination);
-            osc2.type = 'square'; osc2.frequency.setValueAtTime(800, now + 0.25);
-            gain2.gain.setValueAtTime(0.5, now + 0.25); gain2.gain.linearRampToValueAtTime(0, now + 0.5);
+            // Double ting for end
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(600, now);
+            gain.gain.setValueAtTime(0.5, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.2);
+            osc.start(now); osc.stop(now + 0.2);
+            
+            osc2.type = 'square';
+            osc2.frequency.setValueAtTime(800, now + 0.25);
+            gain2.gain.setValueAtTime(0.5, now + 0.25);
+            gain2.gain.linearRampToValueAtTime(0, now + 0.5);
             osc2.start(now + 0.25); osc2.stop(now + 0.5);
         }
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Sub-Components ---
+// --- Sub-Components (Global Scope) ---
 
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
@@ -141,12 +160,12 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   const handleExtract = async () => {
     if (!confirm("Extract all images from this book into a new card section?")) return;
     setIsExtracting(true); setProgressText("Initializing...");
-    const intervals = [setTimeout(() => setProgressText("Scanning PDF pages..."), 2000), setTimeout(() => setProgressText("Extracting raw images..."), 5000), setTimeout(() => setProgressText("Filtering small assets..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
+    const intervals = [setTimeout(() => setProgressText("Scanning PDF pages..."), 2000), setTimeout(() => setProgressText("Extracting raw images..."), 5000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
     try {
         const res = await fetch(`${API_URL}/books/${bookId}/extract`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
         const data = await res.json();
         intervals.forEach(clearTimeout);
-        if (res.ok) { setProgressText("Extraction Complete!"); setTimeout(() => { alert(`Success! ${data.message}. Check your Cards tab.`); setIsExtracting(false); setProgressText(""); }, 500); } 
+        if (res.ok) { setProgressText("Extraction Complete!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); setProgressText(""); }, 500); } 
         else { alert(`Error: ${data.error}`); setIsExtracting(false); setProgressText(""); }
     } catch { intervals.forEach(clearTimeout); alert("Extraction failed. Check network or server."); setIsExtracting(false); setProgressText(""); }
   };
@@ -196,7 +215,7 @@ const HistoryItem = ({ item, onReturn, onDeleteRequest }) => {
     const dateStr = item.pulled_at ? new Date(item.pulled_at).toLocaleDateString() : '';
     return (
         <div {...longPressProps} className="bg-gray-900 p-4 rounded-lg border border-gray-800 flex justify-between items-center select-none">
-            <div><p className="text-gold font-caveat text-xl">{item.text}</p><p className="text-xs text-gray-500">{dateStr}</p></div>
+            <div><p className="text-gold font-caveat text-3xl">{item.text}</p><p className="text-xs text-gray-500">{dateStr}</p></div>
             <button onClick={() => onReturn(item.id)} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded text-white flex items-center gap-1"><RotateCw size={12}/> Return</button>
         </div>
     );
@@ -349,6 +368,7 @@ const DiceGame = () => {
 
     const startTimer = () => { 
         if (result.time === '?' || result.time === '∞') return; 
+        initAudio(); // Initialize audio context
         if (!timerActive) playSound('ting'); 
         if (!timerPaused && !timerActive) setTimeLeft(parseInt(result.time)); 
         setTimerActive(true); 

@@ -19,13 +19,11 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../data');
 const DB_PATH = path.join(DATA_DIR, 'privy.db');
 const SECRET_KEY = 'privy_super_secret_love_key';
 
-// --- Middleware ---
 app.use(express.json());
 app.use(cors());
 app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads')));
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
-// --- Database Setup ---
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new sqlite3.Database(DB_PATH, (err) => {
@@ -41,17 +39,22 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS card_history (id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(card_id) REFERENCES cards(id))`);
     db.run(`CREATE TABLE IF NOT EXISTS books (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, filepath TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
+    
+    // Dice: Added role column
     db.run(`CREATE TABLE IF NOT EXISTS dice_options (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, text TEXT, role TEXT DEFAULT 'wife')`);
+    
+    // Locations: Added count column
     db.run(`CREATE TABLE IF NOT EXISTS location_unlocks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, unlocked_at DATETIME, count INTEGER DEFAULT 0)`);
+    
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, pulled_at DATETIME)`);
 
-    // Migrations
+    // Safe Migrations
     try {
         db.run(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`, () => {});
         db.run(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`, () => {});
     } catch (e) {}
 
-    // Seed Data
+    // Seed Dice
     db.get("SELECT count(*) as count FROM dice_options", (err, row) => {
         if (row && row.count === 0) {
             const defaults = [
@@ -66,6 +69,7 @@ db.serialize(() => {
         }
     });
 
+    // Seed Locations
     db.get("SELECT count(*) as count FROM location_unlocks", (err, row) => {
         if (row && row.count === 0) {
             const defaults = ['Kitchen', 'Shower', 'Car', 'Balcony', 'Hotel', 'Woods', 'Living Room', 'Stairs'];
@@ -76,7 +80,7 @@ db.serialize(() => {
     });
 });
 
-// --- Helper: Ntfy ---
+// --- Ntfy Helper ---
 const sendNtfy = (cardId) => {
     db.all(`SELECT * FROM settings WHERE key IN ('ntfy_url', 'ntfy_topic')`, [], (err, rows) => {
         if (err || !rows) return;
@@ -94,15 +98,11 @@ const sendNtfy = (cardId) => {
                     const fileBuffer = fs.readFileSync(absPath);
                     const { size } = fs.statSync(absPath);
                     const ext = path.extname(absPath) || '.jpg';
-                    const filename = `card_${cardId}_${Date.now()}${ext}`; // Unique Name
-
-                    let contentType = 'application/octet-stream';
-                    if (ext === '.png') contentType = 'image/png';
-                    else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
+                    const filename = `reveal_${Date.now()}${ext}`;
 
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
                     const ntfyUrl = new URL(`${baseUrl}/${settings.ntfy_topic}`);
-                    ntfyUrl.searchParams.append('message', "Today's Position \uD83D\uDE09");
+                    ntfyUrl.searchParams.append('message', "Today's Position \uD83D\uDE09"); 
                     ntfyUrl.searchParams.append('title', 'Privy: Card Revealed!');
                     ntfyUrl.searchParams.append('tags', 'heart,fire,camera');
                     ntfyUrl.searchParams.append('priority', 'high');
@@ -111,7 +111,7 @@ const sendNtfy = (cardId) => {
                     fetch(ntfyUrl.toString(), {
                         method: 'POST',
                         body: fileBuffer,
-                        headers: { 'Content-Length': size.toString(), 'Content-Type': contentType }
+                        headers: { 'Content-Length': size.toString() }
                     }).catch(err => console.error("Ntfy Error:", err.message));
                 } catch (readErr) { console.error("File Read Error:", readErr.message); }
             }
@@ -190,7 +190,7 @@ app.post('/api/settings/test', auth, (req, res) => {
     const baseUrl = ntfy_url.replace(/\/$/, '');
     const url = `${baseUrl}/${ntfy_topic}`;
     if (typeof fetch !== 'function') return res.status(500).json({error: 'Fetch missing'});
-    fetch(url, { method: 'POST', body: "Privy Notification Test Successful! 🎉", headers: { 'Title': 'Privy Test', 'Tags': 'tada,check_mark' } })
+    fetch(url, { method: 'POST', body: "Test Successful! 🎉", headers: { 'Title': 'Privy Test' } })
     .then(r => { if (r.ok) res.json({ success: true }); else res.status(500).json({ error: `Ntfy Error: ${r.status}` }); })
     .catch(err => res.status(500).json({ error: err.message }));
 });
@@ -285,7 +285,7 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
         if (!fs.existsSync(absBookPath)) return res.status(404).json({ error: 'File missing' });
         const sectionTitle = `From: ${book.title}`;
         db.run(`INSERT INTO sections (title) VALUES (?)`, [sectionTitle], function(err) {
-            if (err) return res.status(500).json({ error: 'Failed to create section' });
+            if (err) return res.status(500).json({ error: 'Failed' });
             const sectionId = this.lastID;
             const tempDir = path.join(DATA_DIR, 'uploads', 'temp_' + Date.now());
             fs.mkdirSync(tempDir);
@@ -313,22 +313,69 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
     });
 });
 
-app.get('/api/dice', auth, (req, res) => { db.all(`SELECT * FROM dice_options`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); }); });
-app.put('/api/dice', auth, (req, res) => { const { items, role } = req.body; db.serialize(() => { db.run(`DELETE FROM dice_options WHERE role = ?`, [role || 'wife']); const stmt = db.prepare(`INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)`); items.forEach(item => stmt.run(item.type, item.text, role || 'wife')); stmt.finalize(); res.json({success: true}); }); });
+// --- Dice (Updated for Roles) ---
+app.get('/api/dice', auth, (req, res) => {
+    db.all(`SELECT * FROM dice_options`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); });
+});
 
-app.get('/api/locations', auth, (req, res) => { db.all(`SELECT * FROM location_unlocks`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); }); });
-app.post('/api/locations/:id/toggle', auth, (req, res) => { const time = new Date().toISOString(); db.run(`UPDATE location_unlocks SET count = count + 1, unlocked_at = ? WHERE id = ?`, [time, req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
-app.post('/api/locations/:id/reset', auth, (req, res) => { db.run(`UPDATE location_unlocks SET count = 0, unlocked_at = NULL WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
-app.post('/api/locations', auth, (req, res) => { const { name } = req.body; db.run(`INSERT INTO location_unlocks (name, count) VALUES (?, 0)`, [name], function(err) { if(err) return res.status(500).json({error: err.message}); res.json({id: this.lastID, name, unlocked_at: null, count: 0}); }); });
-app.delete('/api/locations/:id', auth, (req, res) => { db.run(`DELETE FROM location_unlocks WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
+app.put('/api/dice', auth, (req, res) => {
+    const { items, role } = req.body;
+    db.serialize(() => {
+        // Only delete entries for the specific role being updated
+        db.run(`DELETE FROM dice_options WHERE role = ?`, [role || 'wife']);
+        const stmt = db.prepare(`INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)`);
+        items.forEach(item => stmt.run(item.type, item.text, role || 'wife'));
+        stmt.finalize();
+        res.json({success: true});
+    });
+});
 
-app.get('/api/fantasies', auth, (req, res) => { db.all(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY created_at DESC`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); }); });
-app.get('/api/fantasies/history', auth, (req, res) => { db.all(`SELECT * FROM fantasies WHERE pulled_at IS NOT NULL ORDER BY pulled_at DESC`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); }); });
-app.post('/api/fantasies', auth, (req, res) => { const { text } = req.body; db.run(`INSERT INTO fantasies (text) VALUES (?)`, [text], function(err) { if(err) return res.status(500).json({error: err.message}); res.json({success: true, id: this.lastID}); }); });
-app.post('/api/fantasies/pull', auth, (req, res) => { db.get(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY RANDOM() LIMIT 1`, [], (err, row) => { if(err) return res.status(500).json({error: err.message}); if(!row) return res.json({empty: true}); db.run(`UPDATE fantasies SET pulled_at = CURRENT_TIMESTAMP WHERE id = ?`, [row.id]); res.json(row); }); });
-app.post('/api/fantasies/:id/return', auth, (req, res) => { db.run(`UPDATE fantasies SET pulled_at = NULL WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
-app.delete('/api/fantasies/:id', auth, (req, res) => { db.run(`DELETE FROM fantasies WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); }); });
+// --- Locations ---
+app.get('/api/locations', auth, (req, res) => {
+    db.all(`SELECT * FROM location_unlocks`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); });
+});
+app.post('/api/locations/:id/toggle', auth, (req, res) => {
+    const time = new Date().toISOString();
+    db.run(`UPDATE location_unlocks SET count = count + 1, unlocked_at = ? WHERE id = ?`, [time, req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); });
+});
+app.post('/api/locations/:id/reset', auth, (req, res) => {
+    db.run(`UPDATE location_unlocks SET count = 0, unlocked_at = NULL WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); });
+});
+app.post('/api/locations', auth, (req, res) => {
+    const { name } = req.body;
+    db.run(`INSERT INTO location_unlocks (name, count) VALUES (?, 0)`, [name], function(err) { if(err) return res.status(500).json({error: err.message}); res.json({id: this.lastID, name, unlocked_at: null, count: 0}); });
+});
+app.delete('/api/locations/:id', auth, (req, res) => {
+    db.run(`DELETE FROM location_unlocks WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); });
+});
 
+// --- Fantasy Jar ---
+app.get('/api/fantasies', auth, (req, res) => {
+    db.all(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY created_at DESC`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); });
+});
+app.get('/api/fantasies/history', auth, (req, res) => {
+    db.all(`SELECT * FROM fantasies WHERE pulled_at IS NOT NULL ORDER BY pulled_at DESC`, [], (err, rows) => { if(err) return res.status(500).json({error: err.message}); res.json(rows); });
+});
+app.post('/api/fantasies', auth, (req, res) => {
+    const { text } = req.body;
+    db.run(`INSERT INTO fantasies (text) VALUES (?)`, [text], function(err) { if(err) return res.status(500).json({error: err.message}); res.json({success: true, id: this.lastID}); });
+});
+app.post('/api/fantasies/pull', auth, (req, res) => {
+    db.get(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY RANDOM() LIMIT 1`, [], (err, row) => {
+        if(err) return res.status(500).json({error: err.message});
+        if(!row) return res.json({empty: true});
+        db.run(`UPDATE fantasies SET pulled_at = CURRENT_TIMESTAMP WHERE id = ?`, [row.id]);
+        res.json(row);
+    });
+});
+app.post('/api/fantasies/:id/return', auth, (req, res) => {
+    db.run(`UPDATE fantasies SET pulled_at = NULL WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); });
+});
+app.delete('/api/fantasies/:id', auth, (req, res) => {
+    db.run(`DELETE FROM fantasies WHERE id = ?`, [req.params.id], (err) => { if(err) return res.status(500).json({error: err.message}); res.json({success: true}); });
+});
+
+// --- App Reset ---
 app.post('/api/reset-app', auth, (req, res) => {
     db.serialize(() => {
         db.run(`DELETE FROM card_history`);
