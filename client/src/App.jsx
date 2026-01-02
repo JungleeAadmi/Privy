@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
 import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square } from 'lucide-react';
 
@@ -11,7 +11,7 @@ class ErrorBoundary extends React.Component {
     this.state = { hasError: false, error: null };
   }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, errorInfo) { console.error("Uncaught error:", error, errorInfo); }
+  componentDidCatch(error, errorInfo) { console.error("Crash:", error, errorInfo); }
   handleReset() {
     localStorage.clear();
     if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
@@ -20,11 +20,11 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen w-full flex flex-col items-center justify-center bg-gray-900 text-gold p-6 text-center font-sans z-[9999] relative">
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-gold p-6 text-center font-sans z-[9999]">
           <AlertTriangle size={64} className="mb-4 text-red-500" />
           <h1 className="text-4xl mb-4 font-bold">App Crashed</h1>
-          <p className="text-sm mb-8 text-gray-300 break-all">{this.state.error?.message || "Unknown Error"}</p>
-          <button onClick={this.handleReset} className="px-6 py-3 bg-red-600 rounded-full text-white font-bold shadow-lg flex items-center gap-2"><RefreshCw size={20} /> Force Reset</button>
+          <p className="text-sm mb-8 text-gray-300">{this.state.error?.message || "Unknown Error"}</p>
+          <button onClick={this.handleReset} className="px-6 py-3 bg-red-600 rounded-full text-white font-bold flex items-center gap-2"><RefreshCw size={20} /> Force Reset</button>
         </div>
       );
     }
@@ -50,40 +50,40 @@ const useLongPress = (callback = () => {}, ms = 800) => {
   };
 };
 
-// --- Helper Functions ---
+// --- Audio ---
 const playSound = (type) => {
     try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (!AudioContext) return;
         const ctx = new AudioContext();
+        // Resume context if suspended (browser policy)
         if (ctx.state === 'suspended') ctx.resume();
+        
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
         gain.connect(ctx.destination);
         
+        const now = ctx.currentTime;
         if (type === 'ting') {
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
-            gain.gain.setValueAtTime(0.5, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.5);
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.exponentialRampToValueAtTime(400, now + 0.5);
+            gain.gain.setValueAtTime(0.5, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+            osc.start(now);
+            osc.stop(now + 0.5);
         } else if (type === 'end') {
-            // Distinct Double Beep for End
-            const now = ctx.currentTime;
-            const osc1 = ctx.createOscillator(); const gain1 = ctx.createGain();
-            osc1.connect(gain1); gain1.connect(ctx.destination);
-            osc1.type = 'square';
-            osc1.frequency.setValueAtTime(600, now);
-            gain1.gain.setValueAtTime(0.5, now);
-            gain1.gain.linearRampToValueAtTime(0, now + 0.2);
-            osc1.start(now); osc1.stop(now + 0.2);
-
-            const osc2 = ctx.createOscillator(); const gain2 = ctx.createGain();
-            osc2.connect(gain2); gain2.connect(ctx.destination);
-            osc2.type = 'square';
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            
+            osc.frequency.setValueAtTime(600, now);
+            gain.gain.setValueAtTime(0.5, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.2);
+            osc.start(now); osc.stop(now + 0.2);
+            
             osc2.frequency.setValueAtTime(800, now + 0.25);
             gain2.gain.setValueAtTime(0.5, now + 0.25);
             gain2.gain.linearRampToValueAtTime(0, now + 0.5);
@@ -92,12 +92,14 @@ const playSound = (type) => {
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Sub-Components ---
+// --- Top Level Components ---
+
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
   const tapTimer = useRef(null);
   useEffect(() => { setIsRevealed(false); tapCount.current = 0; }, [image]);
+  
   const handleInteraction = () => {
     if (tapTimer.current) clearTimeout(tapTimer.current);
     tapCount.current += 1;
@@ -106,12 +108,13 @@ const RevealCard = ({ image, id, onRevealComplete }) => {
       tapCount.current = 0;
     } else { tapTimer.current = setTimeout(() => { tapCount.current = 0; }, 400); }
   };
+
   return (
     <div className="relative w-full h-full bg-black select-none overflow-hidden flex items-center justify-center" onClick={handleInteraction}>
       <img src={image} alt="Secret" className="max-w-full max-h-full object-contain pointer-events-none" />
       {!isRevealed && (
         <div className="absolute inset-0 z-10 flex items-center justify-center p-4" style={{ backgroundImage: `conic-gradient(#301934 0.25turn, #000 0.25turn 0.5turn, #301934 0.5turn 0.75turn, #000 0.75turn)`, backgroundSize: '50px 50px', backgroundPosition: 'top left' }}>
-          <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl border-2 border-gold/50 shadow-[0_0_20px_rgba(255,215,0,0.3)] animate-pulse select-none pointer-events-none"><span className="text-gold font-caveat text-3xl drop-shadow-md">Triple Tap</span></div>
+          <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl border-2 border-gold/50 shadow-lg animate-pulse select-none pointer-events-none"><span className="text-gold font-caveat text-3xl drop-shadow-md">Triple Tap</span></div>
         </div>
       )}
     </div>
@@ -129,13 +132,15 @@ const HistoryList = ({ cardId, onClose }) => {
       .catch(() => { if(mounted) setLoading(false); });
     return () => { mounted = false; };
   }, [cardId]);
-  const formatDate = (ts) => { try { const date = new Date(ts.endsWith('Z') ? ts : ts + 'Z'); if (isNaN(date.getTime())) return "Unknown Date"; return date.toLocaleDateString(); } catch { return "Error Date"; } };
-  const formatTime = (ts) => { try { const date = new Date(ts.endsWith('Z') ? ts : ts + 'Z'); if (isNaN(date.getTime())) return "--:--"; return date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); } catch { return "--:--"; } };
+  
   return (
     <div className="w-full h-full bg-gray-900 p-4 overflow-y-auto animate-fadeIn">
        <div className="flex justify-between items-center mb-4 border-b border-gold/30 pb-2"><h3 className="text-gold text-xl flex items-center gap-2"><Clock size={18}/> History</h3></div>
        {loading ? <p className="text-gray-400">Loading...</p> : history.length === 0 ? <p className="text-gray-400 text-center mt-10">No history yet.</p> : (
-         <ul className="space-y-3">{history.map((h, i) => (<li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm"><span className="text-white flex items-center gap-2"><Calendar size={14} className="text-burgundy"/> {formatDate(h.timestamp)}</span><span className="text-gold font-mono">{formatTime(h.timestamp)}</span></li>))}</ul>
+         <ul className="space-y-3">{history.map((h, i) => {
+             const d = new Date(h.timestamp.endsWith('Z') ? h.timestamp : h.timestamp + 'Z');
+             return (<li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm"><span className="text-white flex items-center gap-2"><Calendar size={14} className="text-burgundy"/> {d.toLocaleDateString()}</span><span className="text-gold font-mono">{d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></li>)
+         })}</ul>
        )}
     </div>
   );
@@ -147,27 +152,27 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   const handleExtract = async () => {
     if (!confirm("Extract all images from this book into a new card section?")) return;
     setIsExtracting(true); setProgressText("Initializing...");
-    const intervals = [setTimeout(() => setProgressText("Scanning PDF pages..."), 2000), setTimeout(() => setProgressText("Extracting raw images..."), 5000), setTimeout(() => setProgressText("Filtering small assets..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 12000)];
+    const intervals = [setTimeout(() => setProgressText("Scanning..."), 2000), setTimeout(() => setProgressText("Extracting..."), 5000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
     try {
         const res = await fetch(`${API_URL}/books/${bookId}/extract`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
         const data = await res.json();
         intervals.forEach(clearTimeout);
-        if (res.ok) { setProgressText("Extraction Complete!"); setTimeout(() => { alert(`Success! ${data.message}. Check your Cards tab.`); setIsExtracting(false); setProgressText(""); }, 500); } 
-        else { alert(`Error: ${data.error}`); setIsExtracting(false); setProgressText(""); }
-    } catch { intervals.forEach(clearTimeout); alert("Extraction failed. Check network or server."); setIsExtracting(false); setProgressText(""); }
+        if (res.ok) { setProgressText("Done!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); }, 500); } 
+        else { alert(`Error: ${data.error}`); setIsExtracting(false); }
+    } catch { intervals.forEach(clearTimeout); alert("Failed."); setIsExtracting(false); }
   };
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
       <div className="flex justify-between items-center px-4 pb-4 pt-12 bg-gray-900 border-b border-gold/20 safe-top">
         <div className="flex flex-col max-w-[60%]"><h3 className="text-gold text-xl truncate">{title}</h3>{isExtracting && <span className="text-xs text-gold/80 animate-pulse">{progressText}</span>}</div>
         <div className="flex gap-4 items-center">
-            <button onClick={handleExtract} disabled={isExtracting} className={`p-2 rounded-full text-white shadow-lg transition ${isExtracting ? 'bg-gray-700 cursor-wait' : 'bg-blue-600 hover:bg-blue-500'}`} title="Extract Images"><RefreshCw className={isExtracting ? "animate-spin" : ""} size={24}/></button>
+            <button onClick={handleExtract} disabled={isExtracting} className={`p-2 rounded-full text-white shadow-lg ${isExtracting ? 'bg-gray-700' : 'bg-blue-600'}`}><RefreshCw className={isExtracting ? "animate-spin" : ""} size={24}/></button>
             <button onClick={onClose} className="p-2 bg-burgundy rounded-full text-white hover:bg-lipstick shadow-lg"><X size={24}/></button>
         </div>
       </div>
       {isExtracting && <div className="w-full h-1 bg-gray-800"><div className="animate-progress-indeterminate w-full h-full"></div></div>}
       <div className="flex-1 w-full h-full bg-gray-800 flex items-center justify-center p-2 overflow-hidden relative">
-        <object data={url} type="application/pdf" className="w-full h-full rounded-lg border border-gold/20"><div className="text-white text-center flex flex-col items-center justify-center h-full gap-4"><p>Preview not supported on this device.</p><a href={url} download className="bg-gold text-black font-bold py-2 px-6 rounded-full hover:bg-yellow-500 transition">Download PDF</a></div></object>
+        <object data={url} type="application/pdf" className="w-full h-full rounded-lg border border-gold/20"><div className="text-white text-center flex flex-col items-center justify-center h-full gap-4"><p>Preview not supported.</p><a href={url} download className="bg-gold text-black font-bold py-2 px-6 rounded-full">Download PDF</a></div></object>
       </div>
     </div>
   );
@@ -188,21 +193,19 @@ const CardItem = ({ card, onDeleteRequest, onClick }) => {
 
 const LocationItem = ({ loc, onToggle, onDeleteRequest }) => {
     const longPressProps = useLongPress(() => onDeleteRequest(loc), 800);
-    const unlockedDate = loc.unlocked_at ? new Date(loc.unlocked_at).toLocaleDateString() : '';
     return (
         <div {...longPressProps} onClick={() => onToggle(loc.id)} className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer select-none ${loc.count > 0 ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}>
             <div className="flex items-center gap-4"><span className={`text-2xl font-caveat ${loc.count > 0 ? 'text-gold' : 'text-gray-400'}`}>{loc.name}</span>{loc.count > 0 && <span className="bg-gold text-black text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{loc.count}x</span>}</div>
-            {loc.count > 0 ? (<div className="text-right flex-shrink-0"><CheckCircle className="text-green-500 inline mb-1"/><div className="text-xs text-gray-500">{unlockedDate}</div></div>) : (<div className="w-6 h-6 rounded-full border-2 border-gray-600 flex-shrink-0"></div>)}
+            {loc.count > 0 ? (<div className="text-right flex-shrink-0"><CheckCircle className="text-green-500 inline mb-1"/><div className="text-xs text-gray-500">{new Date(loc.unlocked_at).toLocaleDateString()}</div></div>) : (<div className="w-6 h-6 rounded-full border-2 border-gray-600 flex-shrink-0"></div>)}
         </div>
     );
 };
 
 const HistoryItem = ({ item, onReturn, onDeleteRequest }) => {
     const longPressProps = useLongPress(() => onDeleteRequest(item), 800);
-    const dateStr = item.pulled_at ? new Date(item.pulled_at).toLocaleDateString() : '';
     return (
         <div {...longPressProps} className="bg-gray-900 p-4 rounded-lg border border-gray-800 flex justify-between items-center select-none">
-            <div><p className="text-gold font-caveat text-xl">{item.text}</p><p className="text-xs text-gray-500">{dateStr}</p></div>
+            <div><p className="text-gold font-caveat text-xl">{item.text}</p><p className="text-xs text-gray-500">{item.pulled_at ? new Date(item.pulled_at).toLocaleDateString() : ''}</p></div>
             <button onClick={() => onReturn(item.id)} className="text-xs bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded text-white flex items-center gap-1"><RotateCw size={12}/> Return</button>
         </div>
     );
@@ -272,10 +275,10 @@ const Spin = () => {
         const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; });
         if (pool.length === 0) { alert("No cards in this section!"); return; }
         setIsSpinning(true); setWinner(null);
-        const SEGMENT_COUNT = 16;
-        const slots = Array.from({length: SEGMENT_COUNT}, () => pool[Math.floor(Math.random() * pool.length)]);
-        const winningIndex = Math.floor(Math.random() * SEGMENT_COUNT);
-        const winningCard = slots[winningIndex];
+        
+        const winningIndex = Math.floor(Math.random() * 16);
+        const winningCard = pool[Math.floor(Math.random() * pool.length)]; 
+        
         const segmentAngle = 360 / 16; 
         const offset = (winningIndex * segmentAngle) + (segmentAngle / 2);
         const target = 360 - offset; 
@@ -283,7 +286,12 @@ const Spin = () => {
         if (delta < 0) delta += 360;
         const totalRotation = rotation + (5 * 360) + delta;
         setRotation(totalRotation);
-        setTimeout(() => { setIsSpinning(false); setWinner(winningCard); fetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000);
+
+        setTimeout(() => {
+            setIsSpinning(false);
+            setWinner(winningCard);
+            fetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+        }, 4000);
     };
 
     return (
@@ -291,7 +299,9 @@ const Spin = () => {
             <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">{sections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={null} />))}</div>
             <div className="relative w-80 h-80 shrink-0">
                 <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
-                <div className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden" style={{ transform: `rotate(${rotation}deg)`, transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)', background: wheelGradient }}>{Array.from({length: 16}).map((_, i) => (<div key={i} className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom" style={{ transform: `rotate(${i * 22.5 + 11.25}deg)` }}><span className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl">{i + 1}</span></div>))}</div>
+                <div className="w-full h-full rounded-full border-4 border-gold shadow-[0_0_50px_rgba(128,0,32,0.6)] relative overflow-hidden" style={{ transform: `rotate(${rotation}deg)`, transition: 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)', background: wheelGradient }}>
+                    {Array.from({length: 16}).map((_, i) => (<div key={i} className="absolute top-0 left-1/2 w-[1px] h-[50%] origin-bottom" style={{ transform: `rotate(${i * 22.5 + 11.25}deg)` }}><span className="absolute -top-1 -left-3 w-6 text-center text-gold font-bold font-caveat text-xl">{i + 1}</span></div>))}
+                </div>
                 <button onClick={handleSpin} disabled={isSpinning} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-gold border-4 border-burgundy shadow-lg flex items-center justify-center z-10 active:scale-95 transition"><span className="text-burgundy font-black text-xl font-sans tracking-widest">SPIN</span></button>
             </div>
             {winner && (<div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"><div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden bg-black"><button onClick={() => setWinner(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full"><X size={24}/></button><div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center">{showHistory ? (<HistoryList cardId={winner.id} onClose={() => setShowHistory(false)}/>) : (<img src={winner.filepath} alt="Winner" className="max-w-full max-h-full object-contain"/>)}</div><div className="h-[20%] flex flex-col items-center justify-center p-4"><h3 className="text-gold text-2xl font-caveat mb-2">The Wheel has Spoken!</h3><button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-white/50 text-sm hover:text-white"><Heart size={16} className="fill-lipstick text-lipstick"/><span>Revealed {winner.scratched_count + 1} times</span></button></div></div></div>)}
@@ -339,13 +349,21 @@ const DiceGame = () => {
         const interval = setInterval(() => {
             const randomAct = acts.length ? acts[Math.floor(Math.random() * acts.length)].text : '?';
             const randomLoc = locations.length ? locations[Math.floor(Math.random() * locations.length)].text : '?';
-            setResult({ act: randomAct, loc: randomLoc, time: generateTime() });
+            const randomTime = generateTime();
+            setResult({ act: randomAct, loc: randomLoc, time: randomTime });
             steps++;
             if (steps > 20) { clearInterval(interval); setRolling(false); }
         }, 100);
     };
 
-    const startTimer = () => { if (result.time === '?' || result.time === '∞') return; if (!timerActive) playSound('ting'); if (!timerPaused) setTimeLeft(parseInt(result.time)); setTimerActive(true); setTimerPaused(false); };
+    const startTimer = () => { 
+        if (result.time === '?' || result.time === '∞') return; 
+        if (!timerActive) playSound('ting'); 
+        if (!timerPaused && !timerActive) setTimeLeft(parseInt(result.time)); 
+        setTimerActive(true); 
+        setTimerPaused(false); 
+    };
+    
     const pauseTimer = () => { setTimerPaused(true); setTimerActive(false); };
     const stopTimer = () => { setTimerActive(false); setTimerPaused(false); setTimeLeft(0); };
 
@@ -376,12 +394,15 @@ const DiceGame = () => {
                 <button onClick={() => setActiveRole('husband')} className={`px-6 py-2 rounded-full transition ${activeRole === 'husband' ? 'bg-eggplant text-white font-bold' : 'text-gray-400'}`}>Husband's Turn</button>
             </div>
             <div className="flex flex-wrap gap-4 w-full justify-center">
-                <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-2xl leading-tight">{result.act}</span></div>
-                <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-2xl leading-tight">{result.loc}</span></div>
+                <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-3xl leading-tight">{result.act}</span></div>
+                <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-3xl leading-tight">{result.loc}</span></div>
                 <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-3xl">{result.time === '∞' ? '∞' : (result.time === '?' ? '?' : result.time + 's')}</span></div>
             </div>
             {(!rolling && result.act !== '?' && result.loc !== '?') && (<div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn w-full"><p className="text-white text-3xl font-caveat font-bold leading-relaxed"><span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span> {result.time === '∞' ? " until asked to stop." : ` for ${result.time} seconds.`}</p></div>)}
-            {(timerActive || timerPaused) && (<div className="text-red-500 font-mono text-6xl font-bold animate-pulse">{timeLeft}</div>)}
+            
+            {/* Active Timer Display - Separate from Dice */}
+            {(timerActive || timerPaused) && (<div className="text-red-500 font-mono text-7xl font-bold animate-pulse my-4">{timeLeft}</div>)}
+            
             <div className="h-20 flex items-center justify-center w-full gap-6">{!rolling && result.time !== '?' && result.time !== '∞' && (<>{timerActive ? (<button onClick={pauseTimer} className="w-16 h-16 rounded-full bg-yellow-600 flex items-center justify-center shadow-lg"><Pause fill="white" size={32} /></button>) : (<button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>)}{(timerActive || timerPaused) && (<button onClick={stopTimer} className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg"><Square fill="white" size={28} /></button>)}</>)}</div>
             <button onClick={handleRoll} disabled={rolling || timerActive} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50">ROLL</button>
             <button onClick={() => setIsEditing(true)} className="text-gray-500 flex items-center gap-2 mt-4"><Edit2 size={16} /> Edit Dice ({activeRole})</button>
