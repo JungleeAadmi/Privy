@@ -70,7 +70,6 @@ const playSound = (type) => {
             osc.start();
             osc.stop(ctx.currentTime + 0.5);
         } else if (type === 'end') {
-            // Distinct Double Beep
             const now = ctx.currentTime;
             const osc1 = ctx.createOscillator(); const gain1 = ctx.createGain();
             osc1.connect(gain1); gain1.connect(ctx.destination);
@@ -86,7 +85,8 @@ const playSound = (type) => {
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Sub-Components (Defined globally) ---
+// --- Sub-Components ---
+
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
@@ -146,9 +146,9 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
         const res = await fetch(`${API_URL}/books/${bookId}/extract`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
         const data = await res.json();
         intervals.forEach(clearTimeout);
-        if (res.ok) { setProgressText("Extraction Complete!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); setProgressText(""); }, 500); } 
+        if (res.ok) { setProgressText("Done!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); setProgressText(""); }, 500); } 
         else { alert(`Error: ${data.error}`); setIsExtracting(false); setProgressText(""); }
-    } catch { intervals.forEach(clearTimeout); alert("Extraction failed. Check network or server."); setIsExtracting(false); setProgressText(""); }
+    } catch { intervals.forEach(clearTimeout); alert("Failed."); setIsExtracting(false); setProgressText(""); }
   };
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
@@ -385,15 +385,12 @@ const DiceGame = () => {
                 <button onClick={() => setActiveRole('husband')} className={`px-6 py-2 rounded-full transition ${activeRole === 'husband' ? 'bg-eggplant text-white font-bold' : 'text-gray-400'}`}>Husband's Turn</button>
             </div>
             <div className="flex flex-wrap gap-4 w-full justify-center">
-                <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-3xl leading-tight">{result.act}</span></div>
-                <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-3xl leading-tight">{result.loc}</span></div>
+                <div className="w-24 h-24 bg-burgundy rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-2xl leading-tight">{result.act}</span></div>
+                <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-2xl leading-tight">{result.loc}</span></div>
                 <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-3xl">{result.time === '∞' ? '∞' : (result.time === '?' ? '?' : result.time + 's')}</span></div>
             </div>
             {(!rolling && result.act !== '?' && result.loc !== '?') && (<div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn w-full"><p className="text-white text-3xl font-caveat font-bold leading-relaxed"><span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span> {result.time === '∞' ? " until asked to stop." : ` for ${result.time} seconds.`}</p></div>)}
-            
-            {/* Active Timer Display - Separate from Dice */}
             {(timerActive || timerPaused) && (<div className="text-red-500 font-mono text-7xl font-bold animate-pulse my-4">{timeLeft}</div>)}
-            
             <div className="h-20 flex items-center justify-center w-full gap-6">{!rolling && result.time !== '?' && result.time !== '∞' && (<>{timerActive ? (<button onClick={pauseTimer} className="w-16 h-16 rounded-full bg-yellow-600 flex items-center justify-center shadow-lg"><Pause fill="white" size={32} /></button>) : (<button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>)}{(timerActive || timerPaused) && (<button onClick={stopTimer} className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg"><Square fill="white" size={28} /></button>)}</>)}</div>
             <button onClick={handleRoll} disabled={rolling || timerActive} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50">ROLL</button>
             <button onClick={() => setIsEditing(true)} className="text-gray-500 flex items-center gap-2 mt-4"><Edit2 size={16} /> Edit Dice ({activeRole})</button>
@@ -401,6 +398,7 @@ const DiceGame = () => {
     );
 };
 
+// 6. Extras Tab (Locations + Jar)
 const LocationUnlocks = () => {
     const [locations, setLocations] = useState([]);
     const [newLoc, setNewLoc] = useState("");
@@ -453,60 +451,29 @@ const FantasyJar = () => {
     );
 };
 
-const Extras = () => { return ( <div className="p-4 pb-24 space-y-12"><LocationUnlocks /><div className="border-t border-gray-800"></div><FantasyJar /></div> ); };
-
-const Home = () => {
-  const [cards, setCards] = useState([]);
-  const [sections, setSections] = useState([]);
-  const [activeSection, setActiveSection] = useState(null); 
-  const [selectedCard, setSelectedCard] = useState(null); 
-  const [showHistory, setShowHistory] = useState(false);
-  const [deleteId, setDeleteId] = useState(null);
-  const [sectionMenu, setSectionMenu] = useState(null); 
-  const [isCreatingSection, setIsCreatingSection] = useState(false);
-  const [newSectionName, setNewSectionName] = useState("");
+// ... (Books Component) ...
+const Books = () => {
+  const [books, setBooks] = useState([]);
+  const [selectedBook, setSelectedBook] = useState(null);
+  const [menuTarget, setMenuTarget] = useState(null);
   const [renameText, setRenameText] = useState("");
-  const [isRenamingSection, setIsRenamingSection] = useState(false);
-  const fetchData = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const headers = { Authorization: `Bearer ${token}` };
-      const [cardsRes, sectionsRes] = await Promise.all([
-        fetch(`${API_URL}/cards`, { headers }),
-        fetch(`${API_URL}/sections`, { headers })
-      ]);
-      if (cardsRes.ok && sectionsRes.ok) {
-        const cardsData = await cardsRes.json();
-        const sectionsData = await sectionsRes.json();
-        if(Array.isArray(cardsData)) setCards(prev => {
-            if(prev.length !== cardsData.length) return cardsData.sort(() => Math.random() - 0.5);
-            return cardsData.map(c => { const old = prev.find(p => p.id === c.id); return old ? {...c} : c; });
-        });
-        if(Array.isArray(sectionsData)) setSections(sectionsData);
-      }
-    } catch (e) { console.error("Sync error", e); }
-  };
-  useEffect(() => { fetchData(); const interval = setInterval(fetchData, 5000); return () => clearInterval(interval); }, []);
-  const handleUpload = async (e) => { const files = Array.from(e.target.files); if (files.length === 0) return; for (const file of files) { const formData = new FormData(); formData.append('file', file); if (activeSection) formData.append('section_id', activeSection); await fetch(`${API_URL}/cards`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: formData }); } fetchData(); };
-  const handleCreateSection = async () => { if (!newSectionName.trim()) return; await fetch(`${API_URL}/sections`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: newSectionName }) }); setNewSectionName(""); setIsCreatingSection(false); fetchData(); };
-  const handleRenameSection = async () => { if (!sectionMenu || !renameText.trim()) return; await fetch(`${API_URL}/sections/${sectionMenu.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: renameText }) }); setSectionMenu(null); setIsRenamingSection(false); fetchData(); };
-  const handleDeleteSection = async () => { if (!sectionMenu) return; await fetch(`${API_URL}/sections/${sectionMenu.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setSectionMenu(null); if (activeSection === sectionMenu.id) setActiveSection(null); fetchData(); };
-  const handleReveal = async (id) => { await fetch(`${API_URL}/cards/${id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setCards(prev => prev.map(c => c.id === id ? {...c, scratched_count: c.scratched_count + 1} : c)); };
-  const handleDeleteCard = async () => { if (!deleteId) return; await fetch(`${API_URL}/cards/${deleteId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setDeleteId(null); fetchData(); };
-  const shuffleCards = () => { setCards([...cards].sort(() => Math.random() - 0.5)); };
-  const filteredCards = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; });
+  const [isRenaming, setIsRenaming] = useState(false);
+  const loadBooks = async () => { try { const res = await fetch(`${API_URL}/books`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); if (res.ok) { const d = await res.json(); if(Array.isArray(d)) setBooks(d); } } catch(e) { console.error(e); } };
+  useEffect(() => { loadBooks(); const interval = setInterval(loadBooks, 5000); return () => clearInterval(interval); }, []);
+  const handleUpload = async (e) => { const files = Array.from(e.target.files); if (files.length === 0) return; for(const file of files) { const formData = new FormData(); formData.append('file', file); await fetch(`${API_URL}/books`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: formData }); } loadBooks(); };
+  const handleRename = async () => { if (!menuTarget || !renameText.trim()) return; await fetch(`${API_URL}/books/${menuTarget.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: renameText }) }); setMenuTarget(null); setIsRenaming(false); loadBooks(); };
+  const handleDelete = async () => { if (!menuTarget) return; await fetch(`${API_URL}/books/${menuTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); loadBooks(); };
   return (
-    <div className="pb-24 px-4 w-full">
-      <div className="flex gap-2 overflow-x-auto p-2 pb-4 mb-4 no-scrollbar -mx-2">{sections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={(sec) => { setSectionMenu(sec); setRenameText(sec.title); setIsRenamingSection(false); }} />))}<button onClick={() => setIsCreatingSection(true)} className="px-3 py-2 rounded-full bg-gray-800 border border-gray-600 text-gold hover:bg-gray-700 flex items-center shrink-0"><Plus size={18} /></button></div>
-      <div className="flex justify-between items-center mb-6 bg-black/40 p-4 rounded-xl backdrop-blur-sm border-b border-gold/20"><div className="flex gap-4"><button onClick={shuffleCards} className="flex items-center gap-2 text-gold hover:text-white"><Shuffle size={20}/> Shuffle</button></div><label className="flex items-center gap-2 bg-burgundy px-4 py-2 rounded-full cursor-pointer hover:bg-lipstick transition shadow-lg"><Upload size={18} className="text-white"/><span className="text-white text-sm font-bold">Add Cards</span><input type="file" className="hidden" accept="image/*" multiple onChange={handleUpload} /></label></div>
-      {filteredCards.length === 0 ? (<div className="flex flex-col items-center justify-center mt-10 text-gray-500 gap-4"><Folder size={48} /><p>No cards in this section yet.</p></div>) : (<div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fadeIn">{filteredCards.map(card => (<CardItem key={card.id} card={card} onDeleteRequest={setDeleteId} onClick={setSelectedCard} />))}</div>)}
-      {isCreatingSection && (<div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-gold p-6 rounded-xl w-72"><h3 className="text-gold text-lg mb-4">New Section</h3><input autoFocus className="w-full p-2 bg-black border border-gray-600 rounded text-white mb-4" placeholder="Section Name" value={newSectionName} onChange={e => setNewSectionName(e.target.value)} /><div className="flex justify-end gap-2"><button onClick={() => setIsCreatingSection(false)} className="px-3 py-1 text-gray-400">Cancel</button><button onClick={handleCreateSection} className="px-4 py-2 bg-gold text-black rounded font-bold">Create</button></div></div></div>)}
-      {sectionMenu && (<div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-72 text-center shadow-2xl"><h3 className="text-gold text-xl mb-4 truncate">{sectionMenu.title}</h3>{isRenamingSection ? (<div className="space-y-4"><input autoFocus className="w-full p-2 bg-black border border-gold rounded text-white" value={renameText} onChange={(e) => setRenameText(e.target.value)} /><div className="flex justify-center gap-2"><button onClick={() => setIsRenamingSection(false)} className="px-3 py-2 rounded bg-gray-700 text-white text-sm">Cancel</button><button onClick={handleRenameSection} className="px-3 py-2 rounded bg-gold text-black text-sm font-bold">Save</button></div></div>) : (<div className="flex flex-col gap-3"><button onClick={() => setIsRenamingSection(true)} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-white w-full"><Edit2 size={18} /> Rename</button><button onClick={handleDeleteSection} className="flex items-center justify-center gap-2 p-3 rounded bg-red-900/50 hover:bg-red-900 text-white w-full"><Trash2 size={18} /> Delete</button><button onClick={() => setSectionMenu(null)} className="p-2 mt-2 rounded text-gray-400 hover:text-white text-sm">Cancel</button></div>)}</div></div>)}
-      {selectedCard && (<div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"><div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black animate-fadeIn"><button onClick={() => setSelectedCard(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button><div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center">{showHistory ? (<HistoryList cardId={selectedCard.id} onClose={() => setShowHistory(false)}/>) : (<RevealCard id={selectedCard.id} image={selectedCard.filepath} onRevealComplete={() => handleReveal(selectedCard.id)} />)}</div><div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4"><button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-gold text-xl bg-white/5 px-6 py-2 rounded-full border border-gold/30 hover:bg-gold/20 transition active:scale-95"><Heart size={20} className={showHistory ? "text-gray-400" : "fill-lipstick text-lipstick"}/><span>{showHistory ? "Back to Card" : `Revealed ${cards.find(c => c.id === selectedCard.id)?.scratched_count || 0} times`}</span></button></div></div></div>)}
-      {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete this card?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDeleteCard} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
+    <div className="p-6 pb-24 pt-4">
+      <div className="flex justify-between items-center mb-6"><h2 className="text-3xl text-gold">Library</h2><label className="flex items-center gap-2 bg-burgundy px-4 py-2 rounded-full cursor-pointer hover:bg-lipstick"><Upload size={18} className="text-white"/><span className="text-white text-sm">Add Books (PDF)</span><input type="file" className="hidden" accept="application/pdf" multiple onChange={handleUpload} /></label></div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{books.map(book => (<BookItem key={book.id} book={book} onClick={setSelectedBook} onLongPress={(b) => { setMenuTarget(b); setRenameText(b.title); setIsRenaming(false); }} />))}</div>
+      {selectedBook && (<PDFViewer url={selectedBook.filepath} title={selectedBook.title} bookId={selectedBook.id} onClose={() => setSelectedBook(null)} />)}
+      {menuTarget && (<div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-72 text-center shadow-2xl"><h3 className="text-gold text-xl mb-4 truncate">{menuTarget.title}</h3>{isRenaming ? (<div className="space-y-4"><input autoFocus className="w-full p-2 bg-black border border-gold rounded text-white" value={renameText} onChange={(e) => setRenameText(e.target.value)} /><div className="flex justify-center gap-2"><button onClick={() => setIsRenaming(false)} className="px-3 py-2 rounded bg-gray-700 text-white text-sm">Cancel</button><button onClick={handleRename} className="px-3 py-2 rounded bg-gold text-black text-sm font-bold">Save</button></div></div>) : (<div className="flex flex-col gap-3"><button onClick={() => setIsRenaming(true)} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-white w-full"><Edit2 size={18} /> Rename</button><button onClick={handleDelete} className="flex items-center justify-center gap-2 p-3 rounded bg-red-900/50 hover:bg-red-900 text-white w-full"><Trash2 size={18} /> Delete</button><button onClick={() => setMenuTarget(null)} className="p-2 mt-2 rounded text-gray-400 hover:text-white text-sm">Cancel</button></div>)}</div></div>)}
     </div>
   );
 };
+
+// ... (Settings, Notifications, Layout, App are same) ...
 
 const Settings = ({ user, logout }) => {
   const [form, setForm] = useState({ ...user, password: '' });
