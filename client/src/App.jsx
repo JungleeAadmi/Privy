@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, Download, Grid, ArrowRight } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, Download } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -57,7 +57,9 @@ const initAudio = () => {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (AudioContext) audioCtx = new AudioContext();
     }
-    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(e => console.log("Audio resume failed", e));
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(e => console.log("Audio resume failed", e));
+    }
     return audioCtx;
 };
 const playSound = (type) => {
@@ -74,7 +76,9 @@ const playSound = (type) => {
             gain.gain.setValueAtTime(0.5, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
             osc.start(now); osc.stop(now + 0.5);
         } else if (type === 'end') {
-            const beep = (startTime, freq) => { const o = ctx.createOscillator(); const g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.type = 'square'; o.frequency.setValueAtTime(freq, startTime); g.gain.setValueAtTime(0.1, startTime); g.gain.exponentialRampToValueAtTime(0.01, startTime + 0.1); o.start(startTime); o.stop(startTime + 0.1); };
+            const beep = (startTime, freq) => {
+                const o = ctx.createOscillator(); const g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.type = 'square'; o.frequency.setValueAtTime(freq, startTime); g.gain.setValueAtTime(0.1, startTime); g.gain.exponentialRampToValueAtTime(0.01, startTime + 0.1); o.start(startTime); o.stop(startTime + 0.1);
+            };
             beep(now, 600); beep(now + 0.2, 600); beep(now + 0.4, 800);
         }
     } catch(e) { console.warn("Audio error", e); }
@@ -127,16 +131,16 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [progressText, setProgressText] = useState("");
   const handleExtract = async () => {
-    if (!confirm("Extract all images?")) return;
+    if (!confirm("Extract all images from this book into a new card section?")) return;
     setIsExtracting(true); setProgressText("Initializing...");
-    const intervals = [setTimeout(() => setProgressText("Scanning..."), 2000), setTimeout(() => setProgressText("Extracting..."), 5000), setTimeout(() => setProgressText("Filtering..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
+    const intervals = [setTimeout(() => setProgressText("Scanning PDF pages..."), 2000), setTimeout(() => setProgressText("Extracting raw images..."), 5000), setTimeout(() => setProgressText("Filtering small assets..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
     try {
         const res = await fetch(`${API_URL}/books/${bookId}/extract`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
         const data = await res.json();
         intervals.forEach(clearTimeout);
-        if (res.ok) { setProgressText("Done!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); setProgressText(""); }, 500); } 
+        if (res.ok) { setProgressText("Extraction Complete!"); setTimeout(() => { alert(`Success! ${data.message}. Check your Cards tab.`); setIsExtracting(false); setProgressText(""); }, 500); } 
         else { alert(`Error: ${data.error}`); setIsExtracting(false); setProgressText(""); }
-    } catch { intervals.forEach(clearTimeout); alert("Failed."); setIsExtracting(false); setProgressText(""); }
+    } catch { intervals.forEach(clearTimeout); alert("Extraction failed. Check network or server."); setIsExtracting(false); setProgressText(""); }
   };
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
@@ -158,9 +162,7 @@ const SectionTab = ({ section, activeSection, setActiveSection, onLongPress }) =
 
 const HeaderTab = ({ header, activeHeader, setActiveHeader }) => {
     const isActive = activeHeader === header.id;
-    return (
-        <button onClick={() => setActiveHeader(isActive ? null : header.id)} className={`px-4 py-2 rounded-full whitespace-nowrap border transition ${isActive ? 'bg-eggplant border-gold text-gold font-bold shadow-md' : 'bg-gray-900 border-gray-700 text-gray-500'}`}>{header.title}</button>
-    );
+    return ( <button onClick={() => setActiveHeader(isActive ? null : header.id)} className={`px-4 py-2 rounded-full whitespace-nowrap border transition ${isActive ? 'bg-eggplant border-gold text-gold font-bold shadow-md' : 'bg-gray-900 border-gray-700 text-gray-500'}`}>{header.title}</button> );
 };
 
 const CardItem = ({ card, onDeleteRequest, onClick }) => {
@@ -303,13 +305,10 @@ const Gallery = ({ title, endpoint, icon }) => {
                 <button onClick={() => setIsEditing(!isEditing)} className={`flex items-center gap-2 px-4 py-2 rounded-full border transition ${isEditing ? 'bg-gold text-black border-gold' : 'bg-transparent text-gray-400 border-gray-700'}`}><Edit2 size={16}/> {isEditing ? 'Done' : 'Manage'}</button>
             </div>
             {isEditing && (
-                <>
-                <div className="w-full mb-2 text-center text-xs text-gray-500">Long press an item to delete</div>
                 <div className="w-full grid grid-cols-3 gap-2 animate-fadeIn">
                     <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40"><Plus className="text-burgundy"/><span className="text-xs text-burgundy mt-1">Add</span><input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} /></label>
                     {items.map(item => (<GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />))}
                 </div>
-                </>
             )}
             {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Item?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
         </div>
@@ -364,7 +363,7 @@ const Spin = () => {
 
     const filteredSections = activeHeader 
         ? sections.filter(s => s.header_id === activeHeader) 
-        : sections; // Or just show all if no header selected, or maybe only unsorted? Let's show all for now.
+        : sections; 
 
     const wheelGradient = `conic-gradient(${Array.from({length: 16}).map((_, i) => `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`).join(', ')})`;
     const handleSpin = () => { if (isSpinning) return; const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; }); if (pool.length === 0) { alert("No cards in this section!"); return; } setIsSpinning(true); setWinner(null); const winningIndex = Math.floor(Math.random() * 16); const winningCard = pool[Math.floor(Math.random() * pool.length)]; const segmentAngle = 360 / 16; const offset = (winningIndex * segmentAngle) + (segmentAngle / 2); const target = 360 - offset; let delta = target - (rotation % 360); if (delta < 0) delta += 360; const totalRotation = rotation + (5 * 360) + delta; setRotation(totalRotation); setTimeout(() => { setIsSpinning(false); setWinner(winningCard); fetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000); };
