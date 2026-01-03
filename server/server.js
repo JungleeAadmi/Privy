@@ -1,6 +1,6 @@
 /**
  * Privy Backend - Node.js
- * COMPLETE VERSION
+ * STABLE VERSION - With Crash Prevention
  */
 
 const express = require('express');
@@ -13,17 +13,29 @@ const fs = require('fs');
 const cors = require('cors');
 const { exec } = require('child_process');
 
+// --- Global Crash Prevention ---
+process.on('uncaughtException', (err) => {
+    console.error('CRITICAL ERROR (Uncaught):', err);
+    // Keep running if possible
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('CRITICAL ERROR (Unhandled Rejection):', reason);
+});
+
 const app = express();
-const PORT = process.env.PORT || 3000;
+// Default to port 3000 if not specified, but install.sh usually sets PORT=80 in systemd
+const PORT = process.env.PORT || 3000; 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../data');
 const DB_PATH = path.join(DATA_DIR, 'privy.db');
 const SECRET_KEY = 'privy_super_secret_love_key';
 
+// --- Middleware ---
 app.use(express.json());
 app.use(cors());
 app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads')));
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
+// --- Database Setup ---
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new sqlite3.Database(DB_PATH, (err) => {
@@ -31,13 +43,13 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
     else console.log('✅ Connected to SQLite database.');
 });
 
-// --- Init Tables ---
+// --- Init Tables & Migrations ---
 db.serialize(() => {
     // Core
     db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, name TEXT, age INTEGER, gender TEXT, avatar TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
     
-    // Cards & Organization
+    // Cards
     db.run(`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, scratched_count INTEGER DEFAULT 0, section_id INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, header_id INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS header_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)`);
@@ -61,16 +73,18 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
 
-    // Migrations
-    try {
-        db.run(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`, () => {});
-        db.run(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`, () => {});
-        db.run(`ALTER TABLE sections ADD COLUMN header_id INTEGER`, () => {});
-    } catch (e) {}
+    // Safe Migrations (Ignore errors if columns exist)
+    const runMigration = (sql) => {
+        db.run(sql, (err) => { /* Ignore duplicate column errors */ });
+    };
+
+    runMigration(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`);
+    runMigration(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`);
+    runMigration(`ALTER TABLE sections ADD COLUMN header_id INTEGER`);
 
     // Seed Data
     db.get("SELECT count(*) as count FROM dice_options", (err, row) => {
-        if (row && row.count === 0) {
+        if (!err && row && row.count === 0) {
             const defaults = [
                 ['act', 'Kiss', 'wife'], ['act', 'Lick', 'wife'], ['act', 'Massage', 'wife'],
                 ['location', 'Neck', 'wife'], ['location', 'Ears', 'wife'], ['location', 'Thighs', 'wife'],
@@ -78,6 +92,15 @@ db.serialize(() => {
                 ['location', 'Neck', 'husband'], ['location', 'Ears', 'husband'], ['location', 'Thighs', 'husband']
             ];
             const stmt = db.prepare("INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)");
+            defaults.forEach(d => stmt.run(d));
+            stmt.finalize();
+        }
+    });
+
+    db.get("SELECT count(*) as count FROM location_unlocks", (err, row) => {
+        if (!err && row && row.count === 0) {
+            const defaults = ['Kitchen', 'Shower', 'Car', 'Balcony', 'Hotel', 'Woods', 'Living Room', 'Stairs'];
+            const stmt = db.prepare("INSERT INTO location_unlocks (name) VALUES (?)");
             defaults.forEach(d => stmt.run(d));
             stmt.finalize();
         }
@@ -91,7 +114,10 @@ const sendNtfy = (itemId, type = 'card') => {
         const settings = rows.reduce((acc, r) => ({...acc, [r.key]: r.value}), {});
         if (!settings.ntfy_url || !settings.ntfy_topic) return;
 
-        let table = 'cards', title = 'Privy: Card Revealed!', message = "Today's Position \uD83D\uDE09";
+        let table = 'cards';
+        let title = 'Privy: Card Revealed!';
+        let message = "Today's Position \uD83D\uDE09"; 
+        
         if (type === 'toy') { table = 'toys'; title = 'Privy: Toy Selected!'; message = "Let's play with this tonight \uD83D\uDD25"; }
         else if (type === 'lingerie') { table = 'lingerie'; title = 'Privy: Lingerie Chosen!'; message = "Wear this for me \uD83D\uDC8B"; }
         else if (type === 'condoms') { table = 'condoms'; title = 'Privy: Protection Selected'; message = "Safety First! \uD83D\uDEE1\uFE0F"; }
@@ -99,6 +125,7 @@ const sendNtfy = (itemId, type = 'card') => {
 
         db.get(`SELECT filepath FROM ${table} WHERE id = ?`, [itemId], (err, item) => {
             if (!item) return;
+
             const cleanPath = item.filepath.replace('/uploads/', '');
             const absPath = path.join(DATA_DIR, 'uploads', cleanPath);
 
@@ -109,9 +136,13 @@ const sendNtfy = (itemId, type = 'card') => {
                     const { size } = fs.statSync(absPath);
                     const ext = path.extname(absPath) || '.jpg';
                     const filename = `${type}_${itemId}_${Date.now()}${ext}`;
+
+                    let contentType = 'application/octet-stream';
+                    if (ext === '.png') contentType = 'image/png';
+                    else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
+
                     const baseUrl = settings.ntfy_url.replace(/\/$/, '');
                     const ntfyUrl = new URL(`${baseUrl}/${settings.ntfy_topic}`);
-                    
                     ntfyUrl.searchParams.append('message', message);
                     ntfyUrl.searchParams.append('title', title);
                     ntfyUrl.searchParams.append('tags', 'heart,fire,camera');
@@ -121,7 +152,7 @@ const sendNtfy = (itemId, type = 'card') => {
                     fetch(ntfyUrl.toString(), {
                         method: 'POST',
                         body: fileBuffer,
-                        headers: { 'Content-Length': size.toString() }
+                        headers: { 'Content-Length': size.toString(), 'Content-Type': contentType }
                     }).catch(err => console.error("Ntfy Error:", err.message));
                 } catch (readErr) { console.error("File Read Error:", readErr.message); }
             }
@@ -204,6 +235,7 @@ app.delete('/api/fantasies/:id', auth, (req, res) => { db.run(`DELETE FROM fanta
 
 app.post('/api/reset-app', auth, (req, res) => { db.serialize(()=>{ db.run(`DELETE FROM card_history`); db.run(`UPDATE cards SET scratched_count=0`); db.run(`UPDATE location_unlocks SET count=0, unlocked_at=NULL`); db.run(`UPDATE toys SET chosen_count=0`); db.run(`UPDATE lingerie SET chosen_count=0`); db.run(`UPDATE condoms SET chosen_count=0`); db.run(`UPDATE lubes SET chosen_count=0`); res.json({success:true}); }); });
 
+// Gallery Handlers
 const handleGalleryGet = (table) => (req, res) => { db.all(`SELECT * FROM ${table}`, [], (err, rows) => res.json(rows||[])); };
 const handleGalleryPost = (table, subfolder) => (req, res) => { if(!req.file) return res.status(400).json({error:'No file'}); db.run(`INSERT INTO ${table} (filepath) VALUES (?)`, [`/uploads/${subfolder}/${req.file.filename}`], function(err){ res.json({id:this.lastID}); }); };
 const handleGalleryDelete = (table) => (req, res) => { db.get(`SELECT filepath FROM ${table} WHERE id=?`,[req.params.id],(err,r)=>{ if(r) try{ fs.unlinkSync(path.join(DATA_DIR, 'uploads', r.filepath.replace('/uploads/',''))); }catch(e){} db.run(`DELETE FROM ${table} WHERE id=?`, [req.params.id], ()=>{ res.json({success:true}); }); }); });
@@ -234,12 +266,17 @@ app.get('/api/export', auth, (req, res) => {
     const timestamp = Date.now();
     const exportRoot = path.join('/tmp', `privy_export_${timestamp}`);
     fs.mkdirSync(path.join(exportRoot, 'data'), { recursive: true });
+
     const copyFile = (srcRel, destFolder) => {
+        if(!srcRel) return; // Guard against null
         const srcAbs = path.join(DATA_DIR, 'uploads', srcRel.replace(/^\/uploads\//, ''));
         const destAbs = path.join(exportRoot, 'data', destFolder);
         if(!fs.existsSync(destAbs)) fs.mkdirSync(destAbs, { recursive: true });
-        if(fs.existsSync(srcAbs)) fs.copyFileSync(srcAbs, path.join(destAbs, path.basename(srcAbs)));
+        if(fs.existsSync(srcAbs)) {
+            fs.copyFileSync(srcAbs, path.join(destAbs, path.basename(srcAbs)));
+        }
     };
+
     db.serialize(() => {
         db.all(`SELECT c.filepath, s.title as section FROM cards c LEFT JOIN sections s ON c.section_id = s.id`, [], (err, rows) => { if(rows) rows.forEach(r => copyFile(r.filepath, `Cards/${r.section || 'Unsorted'}`)); });
         db.all(`SELECT filepath, title FROM books`, [], (err, rows) => { if(rows) rows.forEach(r => copyFile(r.filepath, 'Books')); });
@@ -247,6 +284,7 @@ app.get('/api/export', auth, (req, res) => {
         db.all(`SELECT filepath FROM lingerie`, [], (err, rows) => { if(rows) rows.forEach(r => copyFile(r.filepath, 'Lingerie')); });
         db.all(`SELECT filepath FROM condoms`, [], (err, rows) => { if(rows) rows.forEach(r => copyFile(r.filepath, 'Protection/Condoms')); });
         db.all(`SELECT filepath FROM lubes`, [], (err, rows) => { if(rows) rows.forEach(r => copyFile(r.filepath, 'Protection/Lubes')); });
+
         setTimeout(() => {
             const zipPath = `${exportRoot}.zip`;
             exec(`cd /tmp && zip -r ${zipPath} privy_export_${timestamp}`, (error) => {
@@ -256,7 +294,7 @@ app.get('/api/export', auth, (req, res) => {
                     fs.unlinkSync(zipPath);
                 });
             });
-        }, 2000);
+        }, 3000); // Increased timeout to ensure copies finish
     });
 });
 

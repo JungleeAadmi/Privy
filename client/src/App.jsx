@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, Download } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, Download, Grid } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -84,11 +84,7 @@ const playSound = (type) => {
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Custom Icons ---
-const VibratorIcon = ({ size=24, className }) => ( <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M12 22v-6"/><path d="M9 16a3 3 0 0 1 6 0"/><path d="M7 10l-2 2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l-2-2"/></svg> );
-const BikiniIcon = ({ size=24, className }) => ( <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 5l-2 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2l-2-5z"/><path d="M18 5l-2 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2l-2-5z"/><path d="M4 14l2 6h12l2-6"/><path d="M12 14v6"/></svg> );
-
-// --- Shared Components ---
+// --- Sub-Components ---
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
@@ -133,14 +129,14 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   const handleExtract = async () => {
     if (!confirm("Extract all images from this book into a new card section?")) return;
     setIsExtracting(true); setProgressText("Initializing...");
-    const intervals = [setTimeout(() => setProgressText("Scanning PDF pages..."), 2000), setTimeout(() => setProgressText("Extracting raw images..."), 5000), setTimeout(() => setProgressText("Filtering small assets..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
+    const intervals = [setTimeout(() => setProgressText("Scanning..."), 2000), setTimeout(() => setProgressText("Extracting..."), 5000), setTimeout(() => setProgressText("Filtering..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
     try {
         const res = await fetch(`${API_URL}/books/${bookId}/extract`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
         const data = await res.json();
         intervals.forEach(clearTimeout);
-        if (res.ok) { setProgressText("Extraction Complete!"); setTimeout(() => { alert(`Success! ${data.message}. Check your Cards tab.`); setIsExtracting(false); setProgressText(""); }, 500); } 
+        if (res.ok) { setProgressText("Done!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); setProgressText(""); }, 500); } 
         else { alert(`Error: ${data.error}`); setIsExtracting(false); setProgressText(""); }
-    } catch { intervals.forEach(clearTimeout); alert("Extraction failed. Check network or server."); setIsExtracting(false); setProgressText(""); }
+    } catch { intervals.forEach(clearTimeout); alert("Failed."); setIsExtracting(false); setProgressText(""); }
   };
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
@@ -209,6 +205,7 @@ const GalleryItem = ({ item, onDeleteRequest }) => {
 };
 
 // --- Pages ---
+
 const Auth = ({ setUser }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [form, setForm] = useState({ username: '', password: '', name: '', age: '', gender: '' });
@@ -369,7 +366,6 @@ const Spin = () => {
     const handleSpin = () => { if (isSpinning) return; const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; }); if (pool.length === 0) { alert("No cards in this section!"); return; } setIsSpinning(true); setWinner(null); const winningIndex = Math.floor(Math.random() * 16); const winningCard = pool[Math.floor(Math.random() * pool.length)]; const segmentAngle = 360 / 16; const offset = (winningIndex * segmentAngle) + (segmentAngle / 2); const target = 360 - offset; let delta = target - (rotation % 360); if (delta < 0) delta += 360; const totalRotation = rotation + (5 * 360) + delta; setRotation(totalRotation); setTimeout(() => { setIsSpinning(false); setWinner(winningCard); fetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000); };
     return (
         <div className="flex flex-col items-center w-full min-h-full py-4">
-             {/* Header Categories Row */}
              <div className="w-full flex gap-2 overflow-x-auto p-2 pb-0 mb-2 no-scrollbar justify-center shrink-0">
                 {headers.map(h => (
                     <HeaderTab key={h.id} header={h} activeHeader={activeHeader} setActiveHeader={setActiveHeader} />
