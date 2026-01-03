@@ -84,7 +84,11 @@ const playSound = (type) => {
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Sub-Components ---
+// --- Custom Icons ---
+const VibratorIcon = ({ size=24, className }) => ( <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M12 22v-6"/><path d="M9 16a3 3 0 0 1 6 0"/><path d="M7 10l-2 2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l-2-2"/></svg> );
+const BikiniIcon = ({ size=24, className }) => ( <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 5l-2 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2l-2-5z"/><path d="M18 5l-2 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2l-2-5z"/><path d="M4 14l2 6h12l2-6"/><path d="M12 14v6"/></svg> );
+
+// --- Shared Components ---
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
@@ -127,7 +131,7 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [progressText, setProgressText] = useState("");
   const handleExtract = async () => {
-    if (!confirm("Extract all images from this book into a new card section?")) return;
+    if (!confirm("Extract all images?")) return;
     setIsExtracting(true); setProgressText("Initializing...");
     const intervals = [setTimeout(() => setProgressText("Scanning..."), 2000), setTimeout(() => setProgressText("Extracting..."), 5000), setTimeout(() => setProgressText("Filtering..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
     try {
@@ -205,7 +209,6 @@ const GalleryItem = ({ item, onDeleteRequest }) => {
 };
 
 // --- Pages ---
-
 const Auth = ({ setUser }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [form, setForm] = useState({ username: '', password: '', name: '', age: '', gender: '' });
@@ -302,10 +305,13 @@ const Gallery = ({ title, endpoint, icon }) => {
                 <button onClick={() => setIsEditing(!isEditing)} className={`flex items-center gap-2 px-4 py-2 rounded-full border transition ${isEditing ? 'bg-gold text-black border-gold' : 'bg-transparent text-gray-400 border-gray-700'}`}><Edit2 size={16}/> {isEditing ? 'Done' : 'Manage'}</button>
             </div>
             {isEditing && (
+                <>
+                <div className="w-full mb-2 text-center text-xs text-gray-500">Long press an item to delete</div>
                 <div className="w-full grid grid-cols-3 gap-2 animate-fadeIn">
                     <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40"><Plus className="text-burgundy"/><span className="text-xs text-burgundy mt-1">Add</span><input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} /></label>
                     {items.map(item => (<GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />))}
                 </div>
+                </>
             )}
             {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Item?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
         </div>
@@ -366,6 +372,7 @@ const Spin = () => {
     const handleSpin = () => { if (isSpinning) return; const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; }); if (pool.length === 0) { alert("No cards in this section!"); return; } setIsSpinning(true); setWinner(null); const winningIndex = Math.floor(Math.random() * 16); const winningCard = pool[Math.floor(Math.random() * pool.length)]; const segmentAngle = 360 / 16; const offset = (winningIndex * segmentAngle) + (segmentAngle / 2); const target = 360 - offset; let delta = target - (rotation % 360); if (delta < 0) delta += 360; const totalRotation = rotation + (5 * 360) + delta; setRotation(totalRotation); setTimeout(() => { setIsSpinning(false); setWinner(winningCard); fetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000); };
     return (
         <div className="flex flex-col items-center w-full min-h-full py-4">
+             {/* Header Categories Row */}
              <div className="w-full flex gap-2 overflow-x-auto p-2 pb-0 mb-2 no-scrollbar justify-center shrink-0">
                 {headers.map(h => (
                     <HeaderTab key={h.id} header={h} activeHeader={activeHeader} setActiveHeader={setActiveHeader} />
@@ -430,8 +437,17 @@ const DiceGame = () => {
                 <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-2xl leading-tight">{result.loc}</span></div>
                 <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-3xl">{result.time === '∞' ? '∞' : (result.time === '?' ? '?' : result.time + 's')}</span></div>
             </div>
-            {(!rolling && result.act !== '?' && result.loc !== '?') && (<div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn w-full"><p className="text-white text-3xl font-caveat font-bold leading-relaxed"><span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span> {result.time === '∞' ? " until asked to stop." : ` for ${result.time} seconds.`}</p></div>)}
+            
+            {(!rolling && result.act !== '?' && result.loc !== '?') && (
+                <div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn w-full">
+                    <p className="text-white text-3xl font-caveat font-bold leading-relaxed">
+                        <span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span> {result.time === '∞' ? " until asked to stop." : ` for ${result.time} seconds.`}
+                    </p>
+                </div>
+            )}
+
             {(timerActive || timerPaused) && (<div className="text-red-500 font-mono text-7xl font-bold animate-pulse my-4">{timeLeft}</div>)}
+            
             <div className="h-20 flex items-center justify-center w-full gap-6">{!rolling && result.time !== '?' && result.time !== '∞' && (<>{timerActive ? (<button onClick={pauseTimer} className="w-16 h-16 rounded-full bg-yellow-600 flex items-center justify-center shadow-lg"><Pause fill="white" size={32} /></button>) : (<button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>)}{(timerActive || timerPaused) && (<button onClick={stopTimer} className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg"><Square fill="white" size={28} /></button>)}</>)}</div>
             <button onClick={handleRoll} disabled={rolling || timerActive} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50">ROLL</button>
             <button onClick={() => setIsEditing(true)} className="text-gray-500 flex items-center gap-2 mt-4"><Edit2 size={16} /> Edit Dice ({activeRole})</button>
