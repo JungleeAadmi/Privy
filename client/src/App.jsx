@@ -4,6 +4,24 @@ import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2,
 
 const API_URL = '/api';
 
+// --- Safe Fetch Wrapper (Prevents Black Screen on 502/500) ---
+const safeFetch = async (url, options = {}) => {
+  try {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get("content-type");
+    if (contentType && contentType.indexOf("application/json") !== -1) {
+      return await res.json();
+    } else {
+      // If server returns HTML (502/404), return null instead of crashing JSON.parse
+      console.warn("Received non-JSON response from", url);
+      return null;
+    }
+  } catch (e) {
+    console.error("Fetch error:", e);
+    return null;
+  }
+};
+
 // --- Error Boundary ---
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -84,11 +102,18 @@ const playSound = (type) => {
     } catch(e) { console.warn("Audio error", e); }
 };
 
-// --- Custom Icons ---
-const VibratorIcon = ({ size=24, className }) => ( <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M12 22v-6"/><path d="M9 16a3 3 0 0 1 6 0"/><path d="M7 10l-2 2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l-2-2"/></svg> );
-const BikiniIcon = ({ size=24, className }) => ( <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 5l-2 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2l-2-5z"/><path d="M18 5l-2 5a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2l-2-5z"/><path d="M4 14l2 6h12l2-6"/><path d="M12 14v6"/></svg> );
+// --- Global Sub-Components ---
+const HeaderTab = ({ header, activeHeader, setActiveHeader }) => {
+    const isActive = activeHeader === header.id;
+    return ( <button onClick={() => setActiveHeader(isActive ? null : header.id)} className={`px-4 py-2 rounded-full whitespace-nowrap border transition ${isActive ? 'bg-eggplant border-gold text-gold font-bold shadow-md' : 'bg-gray-900 border-gray-700 text-gray-500'}`}>{header.title}</button> );
+};
 
-// --- Shared Components ---
+const SectionTab = ({ section, activeSection, setActiveSection, onLongPress }) => {
+    const longPressProps = useLongPress(() => { if (onLongPress) onLongPress(section); }, 800);
+    const isActive = activeSection === section.id;
+    return ( <button {...longPressProps} onClick={() => setActiveSection(isActive ? null : section.id)} className={`px-4 py-2 rounded-full whitespace-nowrap transition border ${isActive ? 'bg-burgundy border-gold text-white shadow-lg transform scale-105 z-10' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-800'}`}>{section.title}</button> );
+};
+
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
@@ -112,9 +137,8 @@ const HistoryList = ({ cardId, onClose }) => {
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let mounted = true;
-    fetch(`${API_URL}/cards/${cardId}/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
-      .then(r => r.ok ? r.json() : [])
-      .then(d => { if(mounted) { setHistory(Array.isArray(d) ? d : []); setLoading(false); } }).catch(() => { if(mounted) setLoading(false); });
+    safeFetch(`${API_URL}/cards/${cardId}/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+      .then(d => { if(mounted) { setHistory(Array.isArray(d) ? d : []); setLoading(false); } });
     return () => { mounted = false; };
   }, [cardId]);
   const formatDate = (ts) => { try { const date = new Date(ts.endsWith('Z') ? ts : ts + 'Z'); if (isNaN(date.getTime())) return "Unknown"; return date.toLocaleDateString(); } catch { return "Error"; } };
@@ -131,16 +155,15 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [progressText, setProgressText] = useState("");
   const handleExtract = async () => {
-    if (!confirm("Extract all images?")) return;
+    if (!confirm("Extract all images from this book into a new card section?")) return;
     setIsExtracting(true); setProgressText("Initializing...");
-    const intervals = [setTimeout(() => setProgressText("Scanning..."), 2000), setTimeout(() => setProgressText("Extracting..."), 5000), setTimeout(() => setProgressText("Filtering..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
+    const intervals = [setTimeout(() => setProgressText("Scanning PDF pages..."), 2000), setTimeout(() => setProgressText("Extracting raw images..."), 5000), setTimeout(() => setProgressText("Filtering small assets..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
     try {
-        const res = await fetch(`${API_URL}/books/${bookId}/extract`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
-        const data = await res.json();
+        const data = await safeFetch(`${API_URL}/books/${bookId}/extract`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
         intervals.forEach(clearTimeout);
-        if (res.ok) { setProgressText("Done!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); setProgressText(""); }, 500); } 
-        else { alert(`Error: ${data.error}`); setIsExtracting(false); setProgressText(""); }
-    } catch { intervals.forEach(clearTimeout); alert("Failed."); setIsExtracting(false); setProgressText(""); }
+        if (data && data.success) { setProgressText("Done!"); setTimeout(() => { alert(`Success! ${data.message}`); setIsExtracting(false); setProgressText(""); }, 500); } 
+        else { alert(`Error: ${data?.error || "Unknown"}`); setIsExtracting(false); setProgressText(""); }
+    } catch { intervals.forEach(clearTimeout); alert("Extraction failed."); setIsExtracting(false); setProgressText(""); }
   };
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
@@ -152,17 +175,6 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
       <div className="flex-1 w-full h-full bg-gray-800 flex items-center justify-center p-2 overflow-hidden relative"><object data={url} type="application/pdf" className="w-full h-full rounded-lg border border-gold/20"><div className="text-white text-center flex flex-col items-center justify-center h-full gap-4"><p>Preview not supported.</p><a href={url} download className="bg-gold text-black font-bold py-2 px-6 rounded-full hover:bg-yellow-500 transition">Download PDF</a></div></object></div>
     </div>
   );
-};
-
-const SectionTab = ({ section, activeSection, setActiveSection, onLongPress }) => {
-    const longPressProps = useLongPress(() => { if (onLongPress) onLongPress(section); }, 800);
-    const isActive = activeSection === section.id;
-    return ( <button {...longPressProps} onClick={() => setActiveSection(isActive ? null : section.id)} className={`px-4 py-2 rounded-full whitespace-nowrap transition border ${isActive ? 'bg-burgundy border-gold text-white shadow-lg transform scale-105 z-10' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-800'}`}>{section.title}</button> );
-};
-
-const HeaderTab = ({ header, activeHeader, setActiveHeader }) => {
-    const isActive = activeHeader === header.id;
-    return ( <button onClick={() => setActiveHeader(isActive ? null : header.id)} className={`px-4 py-2 rounded-full whitespace-nowrap border transition ${isActive ? 'bg-eggplant border-gold text-gold font-bold shadow-md' : 'bg-gray-900 border-gray-700 text-gray-500'}`}>{header.title}</button> );
 };
 
 const CardItem = ({ card, onDeleteRequest, onClick }) => {
@@ -214,12 +226,11 @@ const Auth = ({ setUser }) => {
   const [form, setForm] = useState({ username: '', password: '', name: '', age: '', gender: '' });
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      const endpoint = isLogin ? '/login' : '/register';
-      const res = await fetch(`${API_URL}${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-      const data = await res.json();
-      if (data.token) { localStorage.setItem('token', data.token); localStorage.setItem('user', JSON.stringify(data.user)); setUser(data.user); } else { alert(data.error); }
-    } catch { alert("Network Error"); }
+    const endpoint = isLogin ? '/login' : '/register';
+    const data = await safeFetch(`${API_URL}${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+    if (data && data.token) { localStorage.setItem('token', data.token); localStorage.setItem('user', JSON.stringify(data.user)); setUser(data.user); } 
+    else if (data && data.success) { setIsLogin(true); } 
+    else { alert(data?.error || "Login Error"); }
   };
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-eggplant via-burgundy to-black text-gold font-caveat">
@@ -242,10 +253,8 @@ const Gallery = ({ title, endpoint, icon }) => {
     const [deleteId, setDeleteId] = useState(null);
 
     const fetchItems = useCallback(() => {
-        fetch(`${API_URL}/${endpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
-            .then(res => res.json())
-            .then(data => { if(Array.isArray(data)) setItems(data); })
-            .catch(() => setItems([]));
+        safeFetch(`${API_URL}/${endpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+            .then(data => { if(Array.isArray(data)) setItems(data); });
     }, [endpoint]);
 
     useEffect(() => { fetchItems(); }, [fetchItems]);
@@ -256,7 +265,7 @@ const Gallery = ({ title, endpoint, icon }) => {
         for (const file of files) {
             const formData = new FormData();
             formData.append('file', file);
-            await fetch(`${API_URL}/${endpoint}`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: formData });
+            await safeFetch(`${API_URL}/${endpoint}`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: formData });
         }
         fetchItems();
     };
@@ -274,14 +283,14 @@ const Gallery = ({ title, endpoint, icon }) => {
                 const final = items[Math.floor(Math.random() * items.length)];
                 setWinner(final);
                 setIsDrawing(false);
-                fetch(`${API_URL}/${endpoint}/${final.id}/draw`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+                safeFetch(`${API_URL}/${endpoint}/${final.id}/draw`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
             }
         }, 100);
     };
 
     const handleDelete = async () => {
         if(!deleteId) return;
-        await fetch(`${API_URL}/${endpoint}/${deleteId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+        await safeFetch(`${API_URL}/${endpoint}/${deleteId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
         setDeleteId(null);
         fetchItems();
     };
@@ -344,41 +353,26 @@ const Spin = () => {
 
     useEffect(() => {
         const fetchData = async () => {
-            try {
-                const token = localStorage.getItem('token');
-                const [cRes, sRes, hRes] = await Promise.all([ 
-                    fetch(`${API_URL}/cards`, { headers: { Authorization: `Bearer ${token}` } }), 
-                    fetch(`${API_URL}/sections`, { headers: { Authorization: `Bearer ${token}` } }),
-                    fetch(`${API_URL}/headers`, { headers: { Authorization: `Bearer ${token}` } })
-                ]);
-                if (cRes.ok && sRes.ok && hRes.ok) {
-                    const cData = await cRes.json();
-                    const sData = await sRes.json();
-                    const hData = await hRes.json();
-                    if(Array.isArray(cData)) setCards(cData);
-                    if(Array.isArray(sData)) setSections(sData);
-                    if(Array.isArray(hData)) setHeaders(hData);
-                }
-            } catch(e) {}
+            const [cData, sData, hData] = await Promise.all([ 
+                safeFetch(`${API_URL}/cards`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }), 
+                safeFetch(`${API_URL}/sections`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }),
+                safeFetch(`${API_URL}/headers`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+            ]);
+            if(Array.isArray(cData)) setCards(cData);
+            if(Array.isArray(sData)) setSections(sData);
+            if(Array.isArray(hData)) setHeaders(hData);
         };
         fetchData();
     }, []);
 
-    const filteredSections = activeHeader 
-        ? sections.filter(s => s.header_id === activeHeader) 
-        : sections; 
-
+    const filteredSections = activeHeader ? sections.filter(s => s.header_id === activeHeader) : sections; 
     const wheelGradient = `conic-gradient(${Array.from({length: 16}).map((_, i) => `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`).join(', ')})`;
-    const handleSpin = () => { if (isSpinning) return; const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; }); if (pool.length === 0) { alert("No cards in this section!"); return; } setIsSpinning(true); setWinner(null); const winningIndex = Math.floor(Math.random() * 16); const winningCard = pool[Math.floor(Math.random() * pool.length)]; const segmentAngle = 360 / 16; const offset = (winningIndex * segmentAngle) + (segmentAngle / 2); const target = 360 - offset; let delta = target - (rotation % 360); if (delta < 0) delta += 360; const totalRotation = rotation + (5 * 360) + delta; setRotation(totalRotation); setTimeout(() => { setIsSpinning(false); setWinner(winningCard); fetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000); };
+    const handleSpin = () => { if (isSpinning) return; const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; }); if (pool.length === 0) { alert("No cards in this section!"); return; } setIsSpinning(true); setWinner(null); const winningIndex = Math.floor(Math.random() * 16); const winningCard = pool[Math.floor(Math.random() * pool.length)]; const segmentAngle = 360 / 16; const offset = (winningIndex * segmentAngle) + (segmentAngle / 2); const target = 360 - offset; let delta = target - (rotation % 360); if (delta < 0) delta += 360; const totalRotation = rotation + (5 * 360) + delta; setRotation(totalRotation); setTimeout(() => { setIsSpinning(false); setWinner(winningCard); safeFetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000); };
     return (
         <div className="flex flex-col items-center w-full min-h-full py-4">
-             {/* Header Categories Row */}
              <div className="w-full flex gap-2 overflow-x-auto p-2 pb-0 mb-2 no-scrollbar justify-center shrink-0">
-                {headers.map(h => (
-                    <HeaderTab key={h.id} header={h} activeHeader={activeHeader} setActiveHeader={setActiveHeader} />
-                ))}
+                {headers.map(h => ( <HeaderTab key={h.id} header={h} activeHeader={activeHeader} setActiveHeader={setActiveHeader} /> ))}
             </div>
-
             <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">
                 {filteredSections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={null} />))}
             </div>
@@ -404,7 +398,7 @@ const DiceGame = () => {
     const [activeRole, setActiveRole] = useState('wife');
     const [allOptions, setAllOptions] = useState([]);
 
-    useEffect(() => { fetch(`${API_URL}/dice`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setAllOptions(data); }).catch(console.error); }, []);
+    useEffect(() => { safeFetch(`${API_URL}/dice`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(data => { if(Array.isArray(data)) setAllOptions(data); }); }, []);
     useEffect(() => { const roleActs = allOptions.filter(d => d.type === 'act' && (d.role === activeRole || (!d.role && activeRole === 'wife'))); const roleLocs = allOptions.filter(d => d.type === 'location' && (d.role === activeRole || (!d.role && activeRole === 'wife'))); setActs(roleActs); setLocations(roleLocs); }, [allOptions, activeRole]);
     const generateTime = () => { const standard = [10, 15, 30, 45, 60]; const pool = [...standard, ...standard, ...standard, '∞']; return pool[Math.floor(Math.random() * pool.length)]; };
     const handleRoll = () => { if (rolling) return; setRolling(true); setTimerActive(false); setTimerPaused(false); setResult({ act: '?', loc: '?', time: '?' }); let steps = 0; const interval = setInterval(() => { const randomAct = acts.length ? acts[Math.floor(Math.random() * acts.length)].text : '?'; const randomLoc = locations.length ? locations[Math.floor(Math.random() * locations.length)].text : '?'; const randomTime = generateTime(); setResult({ act: randomAct, loc: randomLoc, time: randomTime }); steps++; if (steps > 20) { clearInterval(interval); setRolling(false); } }, 100); };
@@ -420,7 +414,7 @@ const DiceGame = () => {
                 <div className="space-y-4 text-left">
                     <div><label className="text-white block mb-2">Actions (One per line)</label><textarea className="w-full bg-gray-900 border border-gold p-2 rounded h-32 text-white" defaultValue={acts.map(a => a.text).join('\n')} id="editActs"/></div>
                     <div><label className="text-white block mb-2">Locations (One per line)</label><textarea className="w-full bg-gray-900 border border-gold p-2 rounded h-32 text-white" defaultValue={locations.map(a => a.text).join('\n')} id="editLocs"/></div>
-                    <div className="flex gap-4"><button onClick={() => setIsEditing(false)} className="flex-1 py-3 bg-gray-700 rounded text-white">Cancel</button><button onClick={async () => { const newActs = document.getElementById('editActs').value.split('\n').filter(Boolean).map(t => ({type:'act', text:t})); const newLocs = document.getElementById('editLocs').value.split('\n').filter(Boolean).map(t => ({type:'location', text:t})); await fetch(`${API_URL}/dice`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ items: [...newActs, ...newLocs], role: activeRole }) }); window.location.reload(); }} className="flex-1 py-3 bg-gold text-black font-bold rounded">Save</button></div>
+                    <div className="flex gap-4"><button onClick={() => setIsEditing(false)} className="flex-1 py-3 bg-gray-700 rounded text-white">Cancel</button><button onClick={async () => { const newActs = document.getElementById('editActs').value.split('\n').filter(Boolean).map(t => ({type:'act', text:t})); const newLocs = document.getElementById('editLocs').value.split('\n').filter(Boolean).map(t => ({type:'location', text:t})); await safeFetch(`${API_URL}/dice`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ items: [...newActs, ...newLocs], role: activeRole }) }); window.location.reload(); }} className="flex-1 py-3 bg-gold text-black font-bold rounded">Save</button></div>
                 </div>
             </div>
         )
@@ -437,17 +431,8 @@ const DiceGame = () => {
                 <div className="w-24 h-24 bg-eggplant rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-2xl leading-tight">{result.loc}</span></div>
                 <div className="w-24 h-24 bg-gray-900 rounded-xl border-4 border-gold flex items-center justify-center text-center p-1"><span className="text-white font-bold text-3xl">{result.time === '∞' ? '∞' : (result.time === '?' ? '?' : result.time + 's')}</span></div>
             </div>
-            
-            {(!rolling && result.act !== '?' && result.loc !== '?') && (
-                <div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn w-full">
-                    <p className="text-white text-3xl font-caveat font-bold leading-relaxed">
-                        <span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span> {result.time === '∞' ? " until asked to stop." : ` for ${result.time} seconds.`}
-                    </p>
-                </div>
-            )}
-
+            {(!rolling && result.act !== '?' && result.loc !== '?') && (<div className="bg-black/40 px-6 py-3 rounded-xl border border-gold/30 text-center animate-fadeIn w-full"><p className="text-white text-3xl font-caveat font-bold leading-relaxed"><span className="text-gold">{result.act}</span> your partner's <span className="text-gold">{result.loc}</span> {result.time === '∞' ? " until asked to stop." : ` for ${result.time} seconds.`}</p></div>)}
             {(timerActive || timerPaused) && (<div className="text-red-500 font-mono text-7xl font-bold animate-pulse my-4">{timeLeft}</div>)}
-            
             <div className="h-20 flex items-center justify-center w-full gap-6">{!rolling && result.time !== '?' && result.time !== '∞' && (<>{timerActive ? (<button onClick={pauseTimer} className="w-16 h-16 rounded-full bg-yellow-600 flex items-center justify-center shadow-lg"><Pause fill="white" size={32} /></button>) : (<button onClick={startTimer} className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg animate-bounce"><Play fill="white" size={32} /></button>)}{(timerActive || timerPaused) && (<button onClick={stopTimer} className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg"><Square fill="white" size={28} /></button>)}</>)}</div>
             <button onClick={handleRoll} disabled={rolling || timerActive} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50">ROLL</button>
             <button onClick={() => setIsEditing(true)} className="text-gray-500 flex items-center gap-2 mt-4"><Edit2 size={16} /> Edit Dice ({activeRole})</button>
@@ -459,12 +444,12 @@ const LocationUnlocks = () => {
     const [locations, setLocations] = useState([]);
     const [newLoc, setNewLoc] = useState("");
     const [menuTarget, setMenuTarget] = useState(null);
-    const fetchLocs = () => { fetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setLocations(data); }).catch(console.error); };
+    const fetchLocs = () => { safeFetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(data => { if(Array.isArray(data)) setLocations(data); }); };
     useEffect(() => { fetchLocs(); }, []);
-    const toggleLoc = async (id) => { await fetch(`${API_URL}/locations/${id}/toggle`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ increment: true }) }); fetchLocs(); };
-    const addLoc = async () => { if(!newLoc) return; const res = await fetch(`${API_URL}/locations`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ name: newLoc }) }); if(res.ok) { fetchLocs(); setNewLoc(""); } };
-    const deleteLoc = async () => { if(!menuTarget) return; await fetch(`${API_URL}/locations/${menuTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
-    const resetLoc = async () => { if(!menuTarget) return; await fetch(`${API_URL}/locations/${menuTarget.id}/reset`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
+    const toggleLoc = async (id) => { await safeFetch(`${API_URL}/locations/${id}/toggle`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ increment: true }) }); fetchLocs(); };
+    const addLoc = async () => { if(!newLoc) return; const res = await safeFetch(`${API_URL}/locations`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ name: newLoc }) }); if(res) { fetchLocs(); setNewLoc(""); } };
+    const deleteLoc = async () => { if(!menuTarget) return; await safeFetch(`${API_URL}/locations/${menuTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
+    const resetLoc = async () => { if(!menuTarget) return; await safeFetch(`${API_URL}/locations/${menuTarget.id}/reset`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
     return (
         <div>
             <h2 className="text-gold text-3xl mb-6 flex items-center gap-2"><MapPin/> Locations</h2>
@@ -482,14 +467,14 @@ const FantasyJar = () => {
     const [history, setHistory] = useState([]);
     const [deleteTarget, setDeleteTarget] = useState(null);
     const fetchData = () => {
-        fetch(`${API_URL}/fantasies`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setUnpulledCount(data.length); });
-        fetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => res.json()).then(data => { if(Array.isArray(data)) setHistory(data); });
+        safeFetch(`${API_URL}/fantasies`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(data => { if(Array.isArray(data)) setUnpulledCount(data.length); });
+        safeFetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(data => { if(Array.isArray(data)) setHistory(data); });
     };
     useEffect(() => { fetchData(); }, []);
-    const handleDrop = async () => { if(!wish.trim()) return; await fetch(`${API_URL}/fantasies`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ text: wish }) }); setWish(""); alert("Wish dropped in the jar! 🤫"); fetchData(); };
-    const handlePull = async () => { const res = await fetch(`${API_URL}/fantasies/pull`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); const data = await res.json(); if(data.empty) { alert("The jar is empty! Add more fantasies."); } else { setPulled(data.text); fetchData(); } };
-    const handleReturn = async (id) => { await fetch(`${API_URL}/fantasies/${id}/return`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); fetchData(); };
-    const handleDelete = async () => { if (!deleteTarget) return; await fetch(`${API_URL}/fantasies/${deleteTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setDeleteTarget(null); fetchData(); };
+    const handleDrop = async () => { if(!wish.trim()) return; await safeFetch(`${API_URL}/fantasies`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ text: wish }) }); setWish(""); alert("Wish dropped in the jar! 🤫"); fetchData(); };
+    const handlePull = async () => { const data = await safeFetch(`${API_URL}/fantasies/pull`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); if(data && data.empty) { alert("The jar is empty! Add more fantasies."); } else if(data) { setPulled(data.text); fetchData(); } };
+    const handleReturn = async (id) => { await safeFetch(`${API_URL}/fantasies/${id}/return`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); fetchData(); };
+    const handleDelete = async () => { if (!deleteTarget) return; await safeFetch(`${API_URL}/fantasies/${deleteTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setDeleteTarget(null); fetchData(); };
     return (
         <div className="flex flex-col items-center justify-center gap-8">
             <h2 className="text-gold text-3xl font-caveat">The Fantasy Jar</h2>
@@ -512,113 +497,106 @@ const Home = () => {
   const [selectedCard, setSelectedCard] = useState(null); 
   const [showHistory, setShowHistory] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
-  
-  // Section CRUD
   const [sectionMenu, setSectionMenu] = useState(null); 
   const [isCreatingSection, setIsCreatingSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
   const [renameText, setRenameText] = useState("");
   const [isRenamingSection, setIsRenamingSection] = useState(false);
-  const [moveTarget, setMoveTarget] = useState(null); // For moving sections to headers
-
-  // Header CRUD
+  const [moveTarget, setMoveTarget] = useState(null);
   const [isCreatingHeader, setIsCreatingHeader] = useState(false);
   const [newHeaderName, setNewHeaderName] = useState("");
-  const [headerMenu, setHeaderMenu] = useState(null); // Long press on header
+  const [headerMenu, setHeaderMenu] = useState(null);
 
   const fetchData = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const headersAuth = { Authorization: `Bearer ${token}` };
-      const [cardsRes, sectionsRes, headersRes] = await Promise.all([
-        fetch(`${API_URL}/cards`, { headers: headersAuth }),
-        fetch(`${API_URL}/sections`, { headers: headersAuth }),
-        fetch(`${API_URL}/headers`, { headers: headersAuth })
-      ]);
-      if (cardsRes.ok && sectionsRes.ok && headersRes.ok) {
-        const cardsData = await cardsRes.json();
-        const sectionsData = await sectionsRes.json();
-        const headersData = await headersRes.json();
-        if(Array.isArray(cardsData)) setCards(prev => {
-            if(prev.length !== cardsData.length) return cardsData.sort(() => Math.random() - 0.5);
-            return cardsData.map(c => { const old = prev.find(p => p.id === c.id); return old ? {...c} : c; });
-        });
-        if(Array.isArray(sectionsData)) setSections(sectionsData);
-        if(Array.isArray(headersData)) setHeaders(headersData);
-      }
-    } catch (e) { console.error("Sync error", e); }
+    const token = localStorage.getItem('token');
+    const headersAuth = { Authorization: `Bearer ${token}` };
+    const [cData, sData, hData] = await Promise.all([
+      safeFetch(`${API_URL}/cards`, { headers: headersAuth }),
+      safeFetch(`${API_URL}/sections`, { headers: headersAuth }),
+      safeFetch(`${API_URL}/headers`, { headers: headersAuth })
+    ]);
+    if(Array.isArray(cData)) setCards(prev => {
+        if(prev.length !== cData.length) return cData.sort(() => Math.random() - 0.5);
+        return cData.map(c => { const old = prev.find(p => p.id === c.id); return old ? {...c} : c; });
+    });
+    if(Array.isArray(sData)) setSections(sData);
+    if(Array.isArray(hData)) setHeaders(hData);
   };
   
   useEffect(() => { fetchData(); const interval = setInterval(fetchData, 5000); return () => clearInterval(interval); }, []);
 
-  const handleUpload = async (e) => { const files = Array.from(e.target.files); if (files.length === 0) return; for (const file of files) { const formData = new FormData(); formData.append('file', file); if (activeSection) formData.append('section_id', activeSection); await fetch(`${API_URL}/cards`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: formData }); } fetchData(); };
-  
-  // Section Actions
-  const handleCreateSection = async () => { if (!newSectionName.trim()) return; await fetch(`${API_URL}/sections`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: newSectionName, header_id: activeHeader }) }); setNewSectionName(""); setIsCreatingSection(false); fetchData(); };
-  const handleRenameSection = async () => { if (!sectionMenu || !renameText.trim()) return; await fetch(`${API_URL}/sections/${sectionMenu.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: renameText, header_id: sectionMenu.header_id }) }); setSectionMenu(null); setIsRenamingSection(false); fetchData(); };
-  const handleDeleteSection = async () => { if (!sectionMenu) return; await fetch(`${API_URL}/sections/${sectionMenu.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setSectionMenu(null); if (activeSection === sectionMenu.id) setActiveSection(null); fetchData(); };
-  const handleMoveSection = async (targetHeaderId) => { if (!sectionMenu) return; await fetch(`${API_URL}/sections/${sectionMenu.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: sectionMenu.title, header_id: targetHeaderId }) }); setSectionMenu(null); setMoveTarget(null); fetchData(); };
-
-  // Header Actions
-  const handleCreateHeader = async () => { if (!newHeaderName.trim()) return; await fetch(`${API_URL}/headers`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: newHeaderName }) }); setNewHeaderName(""); setIsCreatingHeader(false); fetchData(); };
-  const handleDeleteHeader = async () => { if (!headerMenu) return; await fetch(`${API_URL}/headers/${headerMenu.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setHeaderMenu(null); if (activeHeader === headerMenu.id) setActiveHeader(null); fetchData(); };
-
-  // Card Actions
-  const handleReveal = async (id) => { await fetch(`${API_URL}/cards/${id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setCards(prev => prev.map(c => c.id === id ? {...c, scratched_count: c.scratched_count + 1} : c)); };
-  const handleDeleteCard = async () => { if (!deleteId) return; await fetch(`${API_URL}/cards/${deleteId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setDeleteId(null); fetchData(); };
+  const handleUpload = async (e) => { const files = Array.from(e.target.files); if (files.length === 0) return; for (const file of files) { const formData = new FormData(); formData.append('file', file); if (activeSection) formData.append('section_id', activeSection); await safeFetch(`${API_URL}/cards`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: formData }); } fetchData(); };
+  const handleCreateSection = async () => { if (!newSectionName.trim()) return; await safeFetch(`${API_URL}/sections`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: newSectionName, header_id: activeHeader }) }); setNewSectionName(""); setIsCreatingSection(false); fetchData(); };
+  const handleRenameSection = async () => { if (!sectionMenu || !renameText.trim()) return; await safeFetch(`${API_URL}/sections/${sectionMenu.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: renameText, header_id: sectionMenu.header_id }) }); setSectionMenu(null); setIsRenamingSection(false); fetchData(); };
+  const handleDeleteSection = async () => { if (!sectionMenu) return; await safeFetch(`${API_URL}/sections/${sectionMenu.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setSectionMenu(null); if (activeSection === sectionMenu.id) setActiveSection(null); fetchData(); };
+  const handleMoveSection = async (targetHeaderId) => { if (!sectionMenu) return; await safeFetch(`${API_URL}/sections/${sectionMenu.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: sectionMenu.title, header_id: targetHeaderId }) }); setSectionMenu(null); setMoveTarget(null); fetchData(); };
+  const handleCreateHeader = async () => { if (!newHeaderName.trim()) return; await safeFetch(`${API_URL}/headers`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ title: newHeaderName }) }); setNewHeaderName(""); setIsCreatingHeader(false); fetchData(); };
+  const handleDeleteHeader = async () => { if (!headerMenu) return; await safeFetch(`${API_URL}/headers/${headerMenu.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setHeaderMenu(null); if (activeHeader === headerMenu.id) setActiveHeader(null); fetchData(); };
+  const handleReveal = async (id) => { await safeFetch(`${API_URL}/cards/${id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setCards(prev => prev.map(c => c.id === id ? {...c, scratched_count: c.scratched_count + 1} : c)); };
+  const handleDeleteCard = async () => { if (!deleteId) return; await safeFetch(`${API_URL}/cards/${deleteId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setDeleteId(null); fetchData(); };
   const shuffleCards = () => { setCards([...cards].sort(() => Math.random() - 0.5)); };
   
-  // Filter logic
-  const filteredSections = activeHeader 
-    ? sections.filter(s => s.header_id === activeHeader) 
-    : sections.filter(s => s.header_id === null); // Show only root sections if no header selected (or 'Uncategorized' behavior)
-
+  const filteredSections = activeHeader ? sections.filter(s => s.header_id === activeHeader) : sections.filter(s => s.header_id === null); 
   const filteredCards = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; });
 
   return (
     <div className="pb-24 px-4 w-full">
-      {/* Headers Bar (Categories) */}
       <div className="flex gap-2 overflow-x-auto p-2 pb-0 mb-2 no-scrollbar -mx-2 items-center">
         <button onClick={() => setActiveHeader(null)} className={`px-4 py-2 rounded-full whitespace-nowrap border text-sm font-bold ${activeHeader === null ? 'bg-eggplant border-gold text-gold shadow-md' : 'bg-gray-900 border-gray-700 text-gray-400'}`}>All / Unsorted</button>
-        {headers.map(h => (
-             <button 
-                key={h.id} 
-                onClick={() => setActiveHeader(h.id === activeHeader ? null : h.id)} 
-                {...useLongPress(() => setHeaderMenu(h), 800)}
-                className={`px-4 py-2 rounded-full whitespace-nowrap border text-sm font-bold transition ${activeHeader === h.id ? 'bg-eggplant border-gold text-gold shadow-md' : 'bg-gray-900 border-gray-700 text-gray-400'}`}
-             >
-                 {h.title}
-             </button>
-        ))}
+        {headers.map(h => ( <HeaderTab key={h.id} header={h} activeHeader={activeHeader} setActiveHeader={setActiveHeader} /> ))}
         <button onClick={() => setIsCreatingHeader(true)} className="px-3 py-2 rounded-full bg-gray-800 border border-gray-600 text-gold hover:bg-gray-700 flex items-center shrink-0"><Plus size={16} /></button>
       </div>
-
-      {/* Sections Bar */}
       <div className="flex gap-2 overflow-x-auto p-2 pb-4 mb-4 no-scrollbar -mx-2 bg-black/20 rounded-lg">
         {filteredSections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={(sec) => { setSectionMenu(sec); setRenameText(sec.title); setIsRenamingSection(false); }} />))}
         <button onClick={() => setIsCreatingSection(true)} className="px-3 py-2 rounded-full bg-gray-800 border border-gray-600 text-white hover:bg-gray-700 flex items-center shrink-0"><Plus size={18} /></button>
       </div>
-
       <div className="flex justify-between items-center mb-6 bg-black/40 p-4 rounded-xl backdrop-blur-sm border-b border-gold/20"><div className="flex gap-4"><button onClick={shuffleCards} className="flex items-center gap-2 text-gold hover:text-white"><Shuffle size={20}/> Shuffle</button></div><label className="flex items-center gap-2 bg-burgundy px-4 py-2 rounded-full cursor-pointer hover:bg-lipstick transition shadow-lg"><Upload size={18} className="text-white"/><span className="text-white text-sm font-bold">Add Cards</span><input type="file" className="hidden" accept="image/*" multiple onChange={handleUpload} /></label></div>
       {filteredCards.length === 0 ? (<div className="flex flex-col items-center justify-center mt-10 text-gray-500 gap-4"><Folder size={48} /><p>No cards in this section.</p></div>) : (<div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fadeIn">{filteredCards.map(card => (<CardItem key={card.id} card={card} onDeleteRequest={setDeleteId} onClick={setSelectedCard} />))}</div>)}
-      
-      {/* Create Section Modal */}
       {isCreatingSection && (<div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-gold p-6 rounded-xl w-72"><h3 className="text-gold text-lg mb-4">New Section</h3><input autoFocus className="w-full p-2 bg-black border border-gray-600 rounded text-white mb-4" placeholder="Section Name" value={newSectionName} onChange={e => setNewSectionName(e.target.value)} /><div className="flex justify-end gap-2"><button onClick={() => setIsCreatingSection(false)} className="px-3 py-1 text-gray-400">Cancel</button><button onClick={handleCreateSection} className="px-4 py-2 bg-gold text-black rounded font-bold">Create</button></div></div></div>)}
-
-      {/* Create Header Modal */}
       {isCreatingHeader && (<div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-gold p-6 rounded-xl w-72"><h3 className="text-gold text-lg mb-4">New Category</h3><input autoFocus className="w-full p-2 bg-black border border-gray-600 rounded text-white mb-4" placeholder="Category Name" value={newHeaderName} onChange={e => setNewHeaderName(e.target.value)} /><div className="flex justify-end gap-2"><button onClick={() => setIsCreatingHeader(false)} className="px-3 py-1 text-gray-400">Cancel</button><button onClick={handleCreateHeader} className="px-4 py-2 bg-gold text-black rounded font-bold">Create</button></div></div></div>)}
-      
-      {/* Section Options Modal */}
       {sectionMenu && !moveTarget && (<div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-72 text-center shadow-2xl"><h3 className="text-gold text-xl mb-4 truncate">{sectionMenu.title}</h3>{isRenamingSection ? (<div className="space-y-4"><input autoFocus className="w-full p-2 bg-black border border-gold rounded text-white" value={renameText} onChange={(e) => setRenameText(e.target.value)} /><div className="flex justify-center gap-2"><button onClick={() => setIsRenamingSection(false)} className="px-3 py-2 rounded bg-gray-700 text-white text-sm">Cancel</button><button onClick={handleRenameSection} className="px-3 py-2 rounded bg-gold text-black text-sm font-bold">Save</button></div></div>) : (<div className="flex flex-col gap-3"><button onClick={() => setIsRenamingSection(true)} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-white w-full"><Edit2 size={18} /> Rename</button><button onClick={() => setMoveTarget(true)} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-white w-full"><Grid size={18} /> Move to Group</button><button onClick={handleDeleteSection} className="flex items-center justify-center gap-2 p-3 rounded bg-red-900/50 hover:bg-red-900 text-white w-full"><Trash2 size={18} /> Delete</button><button onClick={() => setSectionMenu(null)} className="p-2 mt-2 rounded text-gray-400 hover:text-white text-sm">Cancel</button></div>)}</div></div>)}
-
-      {/* Move Section Modal */}
       {moveTarget && (<div className="fixed inset-0 z-[75] bg-black/90 flex items-center justify-center p-4"><div className="bg-gray-900 border border-gold p-6 rounded-xl w-80 max-h-[80vh] overflow-y-auto"><h3 className="text-gold text-xl mb-4">Move "{sectionMenu?.title}" to:</h3><div className="flex flex-col gap-2"><button onClick={() => handleMoveSection(null)} className="p-3 bg-gray-800 rounded text-left hover:bg-gray-700 border border-gray-600">No Group (Unsorted)</button>{headers.map(h => (<button key={h.id} onClick={() => handleMoveSection(h.id)} className="p-3 bg-gray-800 rounded text-left hover:bg-gray-700 border border-gray-600">{h.title}</button>))}</div><button onClick={() => setMoveTarget(null)} className="mt-4 text-gray-400 w-full">Cancel</button></div></div>)}
-
-      {/* Header Delete Modal */}
       {headerMenu && (<div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><h3 className="text-white text-xl mb-4">Delete Category?</h3><p className="text-gray-400 text-xs mb-4">Sections inside will become Unsorted.</p><div className="flex justify-center gap-4"><button onClick={() => setHeaderMenu(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDeleteHeader} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
-
       {selectedCard && (<div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"><div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black animate-fadeIn"><button onClick={() => setSelectedCard(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button><div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center">{showHistory ? (<HistoryList cardId={selectedCard.id} onClose={() => setShowHistory(false)}/>) : (<RevealCard id={selectedCard.id} image={selectedCard.filepath} onRevealComplete={() => handleReveal(selectedCard.id)} />)}</div><div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4"><button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-gold text-xl bg-white/5 px-6 py-2 rounded-full border border-gold/30 hover:bg-gold/20 transition active:scale-95"><Heart size={20} className={showHistory ? "text-gray-400" : "fill-lipstick text-lipstick"}/><span>{showHistory ? "Back to Card" : `Revealed ${cards.find(c => c.id === selectedCard.id)?.scratched_count || 0} times`}</span></button></div></div></div>)}
       {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete this card?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDeleteCard} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
+    </div>
+  );
+};
+
+const Settings = ({ user, logout }) => {
+  const [form, setForm] = useState({ ...user, password: '' });
+  const handleUpdate = async (e) => { e.preventDefault(); await safeFetch(`${API_URL}/user`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify(form) }); alert('Profile Updated'); };
+  return (<div className="p-6 text-gold pb-24"><h2 className="text-3xl mb-6">Profile Settings</h2><form onSubmit={handleUpdate} className="max-w-md mx-auto space-y-4"><div className="space-y-4 border-b border-gold/30 pb-6"><div><label>Display Name</label><input className="w-full p-2 bg-gray-800 rounded border border-burgundy" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div><div><label>Change Password (Optional)</label><input className="w-full p-2 bg-gray-800 rounded border border-burgundy" type="password" onChange={e => setForm({...form, password: e.target.value})} /></div></div><button className="w-full bg-gold text-black font-bold p-3 rounded hover:bg-yellow-600">Save Changes</button></form></div>);
+};
+
+const Notifications = () => {
+  const [ntfy, setNtfy] = useState({ ntfy_url: '', ntfy_topic: '' });
+  useEffect(() => { safeFetch(`${API_URL}/settings`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(d => { if(d) setNtfy(d); }); }, []);
+  const handleUpdate = async (e) => { e.preventDefault(); await safeFetch(`${API_URL}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify(ntfy) }); alert('Notification Settings Updated'); };
+  const handleTestNtfy = async () => { const res = await safeFetch(`${API_URL}/settings/test`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify(ntfy) }); if (res && res.success) alert('Notification Sent! Check your device.'); else alert('Failed to send notification.'); };
+  return (<div className="p-6 text-gold pb-24"><h2 className="text-3xl mb-6">Notifications</h2><form onSubmit={handleUpdate} className="max-w-md mx-auto space-y-4"><div className="space-y-4 border-b border-gold/30 pb-6 relative"><div className="flex justify-between items-center"><h3 className="text-xl text-white/80 flex items-center gap-2"><Bell size={20}/> Ntfy Configuration</h3><button type="button" onClick={handleTestNtfy} className="flex items-center gap-1 bg-burgundy/80 hover:bg-burgundy px-3 py-1 rounded text-white text-sm"><Send size={14} /> Test</button></div><div><label>Server URL (e.g. https://ntfy.sh)</label><input className="w-full p-2 bg-gray-800 rounded border border-burgundy" value={ntfy.ntfy_url || ''} onChange={e => setNtfy({...ntfy, ntfy_url: e.target.value})} placeholder="https://ntfy.sh" /></div><div><label>Topic Name</label><input className="w-full p-2 bg-gray-800 rounded border border-burgundy" value={ntfy.ntfy_topic || ''} onChange={e => setNtfy({...ntfy, ntfy_topic: e.target.value})} placeholder="my_secret_couple_channel" /></div></div><button className="w-full bg-gold text-black font-bold p-3 rounded hover:bg-yellow-600">Save Changes</button></form></div>);
+};
+
+const Layout = ({ children, user, logout }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetStep, setResetStep] = useState(1);
+  const [resetInput, setResetInput] = useState("");
+  const handleReload = async () => { if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (const registration of registrations) await registration.unregister(); } window.location.reload(true); };
+  const handleResetSubmit = async () => { if (resetInput !== 'RESET') { alert("Please type 'RESET' exactly."); return; } if (resetStep === 1) { setResetStep(2); setResetInput(""); } else { await safeFetch(`${API_URL}/reset-app`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); alert("App has been reset."); setShowResetModal(false); setResetStep(1); setResetInput(""); handleReload(); } };
+  const handleExport = async () => { const link = document.createElement('a'); link.href = `${API_URL}/export?token=${localStorage.getItem('token')}`; link.setAttribute('download', 'privy_backup.zip'); document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+  
+  return (
+    <div className="fixed inset-0 w-full h-full bg-black text-white font-caveat selection:bg-lipstick flex flex-col overflow-hidden">
+      <header className="flex-none w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-2 flex justify-between items-center shadow-lg"><div className="flex items-center gap-3"><img src="/apple-touch-icon.png" alt="Logo" className="w-10 h-10 rounded-full border border-gold shadow-md" /><div className="flex flex-col"><h1 className="text-2xl text-gold tracking-widest leading-none">Privy</h1><span className="text-xl text-gray-400 -mt-1">@{user?.username}</span></div></div><div className="flex items-center gap-4"><button onClick={handleReload} className="text-gold/80 hover:text-gold focus:outline-none active:rotate-180 transition-transform duration-500"><RefreshCw size={24} /></button><button onClick={() => setMenuOpen(!menuOpen)} className="text-gold focus:outline-none">{menuOpen ? <X size={28} /> : <div className="space-y-1"><div className="w-6 h-0.5 bg-gold"></div><div className="w-6 h-0.5 bg-gold"></div><div className="w-6 h-0.5 bg-gold"></div></div>}</button></div></header>
+      {menuOpen && (<div className="absolute top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-50 p-4 shadow-2xl transform transition-transform"><div className="flex flex-col gap-4 text-xl"><Link to="/settings" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><User size={20}/> Profile</Link><Link to="/notifications" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><Bell size={20}/> Notifications</Link><button onClick={handleExport} className="flex items-center gap-3 p-2 text-gold hover:bg-white/10 rounded w-full text-left"><Download size={20}/> Export Data</button><div className="my-2 border-t border-gray-700"></div><button onClick={() => { setShowResetModal(true); setMenuOpen(false); }} className="flex items-center gap-3 p-2 text-red-400 hover:bg-white/10 rounded"><RotateCcw size={20}/> Reset App</button><button onClick={logout} className="flex items-center gap-3 p-2 text-lipstick hover:bg-white/10 rounded"><LogOut size={20}/> Logout</button></div></div>)}
+      <main className="flex-1 overflow-y-auto bg-gradient-to-b from-black via-eggplant/20 to-black relative w-full">{children}</main>
+      <nav className="flex-none w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50"><Link to="/" className={`flex flex-col items-center ${location.pathname === '/' ? 'text-lipstick' : 'text-gray-500'}`}><Layers size={24} /><span className="text-xs">Cards</span></Link><Link to="/spin" className={`flex flex-col items-center ${location.pathname === '/spin' ? 'text-lipstick' : 'text-gray-500'}`}><Aperture size={24} /><span className="text-xs">Spin</span></Link><Link to="/dice" className={`flex flex-col items-center ${location.pathname === '/dice' ? 'text-lipstick' : 'text-gray-500'}`}><Dices size={24} /><span className="text-xs">Dice</span></Link><Link to="/extras" className={`flex flex-col items-center ${location.pathname === '/extras' ? 'text-lipstick' : 'text-gray-500'}`}><Sparkles size={24} /><span className="text-xs">Extras</span></Link><Link to="/books" className={`flex flex-col items-center ${location.pathname === '/books' ? 'text-lipstick' : 'text-gray-500'}`}><Book size={24} /><span className="text-xs">Books</span></Link>
+      <Link to="/toys" className={`flex flex-col items-center ${location.pathname === '/toys' ? 'text-lipstick' : 'text-gray-500'}`}><Zap size={24} /><span className="text-xs">Toys</span></Link>
+      <Link to="/lingerie" className={`flex flex-col items-center ${location.pathname === '/lingerie' ? 'text-lipstick' : 'text-gray-500'}`}><Shirt size={24} /><span className="text-xs">Lingerie</span></Link>
+      <Link to="/protection" className={`flex flex-col items-center ${location.pathname === '/protection' ? 'text-lipstick' : 'text-gray-500'}`}><Shield size={24} /><span className="text-xs">Safety</span></Link></nav>
+      {showResetModal && (<div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"><div className="bg-gray-900 border border-red-500 p-6 rounded-xl w-80 text-center shadow-2xl"><AlertTriangle size={48} className="mx-auto text-red-500 mb-4" /><h3 className="text-white text-2xl mb-2 font-bold">App Reset</h3><p className="text-gray-400 text-sm mb-6">{resetStep === 1 ? "This will reset all scratch counts and history to zero. This cannot be undone." : "Are you really sure? This is your last chance."}</p><input className="w-full p-3 bg-black border border-gray-700 rounded text-white text-center tracking-widest mb-4 uppercase" placeholder="Type RESET" value={resetInput} onChange={e => setResetInput(e.target.value.toUpperCase())} /><div className="flex justify-center gap-4"><button onClick={() => { setShowResetModal(false); setResetStep(1); setResetInput(""); }} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleResetSubmit} className={`px-4 py-2 rounded font-bold text-white ${resetInput === 'RESET' ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 cursor-not-allowed'}`} disabled={resetInput !== 'RESET'}>{resetStep === 1 ? "Next Step" : "CONFIRM RESET"}</button></div></div></div>)}
     </div>
   );
 };
