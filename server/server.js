@@ -26,34 +26,32 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const db = new sqlite3.Database(DB_PATH);
 
 db.serialize(() => {
-    const run = (sql) => { try { db.run(sql); } catch (e) {} };
-    run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, name TEXT, age INTEGER, gender TEXT, avatar TEXT)`);
-    run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
-    run(`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY, filepath TEXT, scratched_count INTEGER DEFAULT 0, section_id INTEGER)`);
-    run(`CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY, title TEXT, header_id INTEGER)`);
-    run(`CREATE TABLE IF NOT EXISTS header_sections (id INTEGER PRIMARY KEY, title TEXT)`);
-    run(`CREATE TABLE IF NOT EXISTS card_history (id INTEGER PRIMARY KEY, card_id INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(card_id) REFERENCES cards(id))`);
-    run(`CREATE TABLE IF NOT EXISTS books (id INTEGER PRIMARY KEY, title TEXT, filepath TEXT)`);
-    run(`CREATE TABLE IF NOT EXISTS dice_options (id INTEGER PRIMARY KEY, type TEXT, text TEXT, role TEXT DEFAULT 'wife')`);
-    run(`CREATE TABLE IF NOT EXISTS location_unlocks (id INTEGER PRIMARY KEY, name TEXT UNIQUE, unlocked_at DATETIME, count INTEGER DEFAULT 0)`);
-    run(`CREATE TABLE IF NOT EXISTS fantasies (id INTEGER PRIMARY KEY, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, pulled_at DATETIME)`);
-    run(`CREATE TABLE IF NOT EXISTS toys (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
-    run(`CREATE TABLE IF NOT EXISTS lingerie (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
-    run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
-    run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
+    const schemas = [
+        `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, name TEXT, age INTEGER, gender TEXT, avatar TEXT)`,
+        `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`,
+        `CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY, filepath TEXT, scratched_count INTEGER DEFAULT 0, section_id INTEGER)`,
+        `CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY, title TEXT, header_id INTEGER)`,
+        `CREATE TABLE IF NOT EXISTS header_sections (id INTEGER PRIMARY KEY, title TEXT)`,
+        `CREATE TABLE IF NOT EXISTS card_history (id INTEGER PRIMARY KEY, card_id INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(card_id) REFERENCES cards(id))`,
+        `CREATE TABLE IF NOT EXISTS books (id INTEGER PRIMARY KEY, title TEXT, filepath TEXT)`,
+        `CREATE TABLE IF NOT EXISTS dice_options (id INTEGER PRIMARY KEY, type TEXT, text TEXT, role TEXT DEFAULT 'wife')`,
+        `CREATE TABLE IF NOT EXISTS location_unlocks (id INTEGER PRIMARY KEY, name TEXT UNIQUE, unlocked_at DATETIME, count INTEGER DEFAULT 0)`,
+        `CREATE TABLE IF NOT EXISTS fantasies (id INTEGER PRIMARY KEY, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, pulled_at DATETIME)`,
+        `CREATE TABLE IF NOT EXISTS toys (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`,
+        `CREATE TABLE IF NOT EXISTS lingerie (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`,
+        `CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`,
+        `CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`
+    ];
+    schemas.forEach(s => db.run(s));
     
     // Migrations
-    run(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`);
-    run(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`);
-    run(`ALTER TABLE sections ADD COLUMN header_id INTEGER`);
-
-    // Seeds
-    db.get("SELECT count(*) as count FROM dice_options", (e, r) => {
-        if (r && r.count === 0) {
-            const d = [['act','Kiss','wife'],['act','Lick','wife'],['location','Neck','wife'],['act','Kiss','husband'],['location','Neck','husband']];
-            const s = db.prepare("INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)");
-            d.forEach(v => s.run(v)); s.finalize();
-        }
+    const cols = [
+        ['dice_options', 'role', "TEXT DEFAULT 'wife'"],
+        ['location_unlocks', 'count', "INTEGER DEFAULT 0"],
+        ['sections', 'header_id', "INTEGER"]
+    ];
+    cols.forEach(([tbl, col, def]) => {
+        try { db.run(`ALTER TABLE ${tbl} ADD COLUMN ${col} ${def}`); } catch(e){}
     });
 });
 
@@ -62,18 +60,22 @@ const sendNtfy = (id, type='card') => {
         if(!r) return;
         const s = r.reduce((a,x)=>({...a, [x.key]:x.value}),{});
         if(!s.ntfy_url) return;
-        let tbl='cards';
-        if(type==='toy') tbl='toys'; else if(type==='lingerie') tbl='lingerie';
-        else if(type==='condoms') tbl='condoms'; else if(type==='lubes') tbl='lubes';
+        let tbl='cards', msg="New Activity", title="Privy Update";
         
+        if(type==='toy') { tbl='toys'; title="Toy Selected!"; }
+        else if(type==='lingerie') { tbl='lingerie'; title="Wear This!"; }
+        else if(type==='condoms') { tbl='condoms'; title="Safety First"; }
+        else if(type==='lubes') { tbl='lubes'; title="Lube Up"; }
+
         db.get(`SELECT filepath FROM ${tbl} WHERE id=?`, [id], (e, row)=>{
             if(!row) return;
             const p = path.join(DATA_DIR, 'uploads', row.filepath.replace('/uploads/',''));
             if(fs.existsSync(p)) {
                 try {
                     const u = new URL(`${s.ntfy_url.replace(/\/$/,'')}/${s.ntfy_topic}`);
+                    u.searchParams.append('message', msg);
+                    u.searchParams.append('title', title);
                     u.searchParams.append('filename', `${type}_${id}.jpg`);
-                    u.searchParams.append('message', `New ${type} selected!`);
                     fetch(u.toString(), { method:'POST', body:fs.readFileSync(p) }).catch(()=>{});
                 } catch(e){}
             }
@@ -123,6 +125,7 @@ app.put('/api/user', auth, (req, res) => {
     db.run(q, p, (e)=>res.json({success:!e}));
 });
 
+// Settings
 app.get('/api/settings', auth, (req, res) => db.all(`SELECT * FROM settings`, [], (e,r)=>res.json(r?r.reduce((a,x)=>({...a,[x.key]:x.value}),{}):{})));
 app.put('/api/settings', auth, (req, res) => {
     db.serialize(()=>{
@@ -136,6 +139,7 @@ app.post('/api/settings/test', auth, (req, res) => {
     fetch(`${req.body.ntfy_url}/${req.body.ntfy_topic}`, {method:'POST', body:'Test'}).then(r=>res.json({success:r.ok})).catch(e=>res.status(500).json({error:e.message})); 
 });
 
+// Generic Handlers
 const getTable = (t) => (req, res) => db.all(`SELECT * FROM ${t}`, [], (e,r)=>res.json(r||[]));
 const delItem = (t) => (req, res) => {
     db.get(`SELECT filepath FROM ${t} WHERE id=?`,[req.params.id],(e,r)=>{
@@ -148,6 +152,7 @@ const postFile = (t) => (req, res) => {
     db.run(`INSERT INTO ${t} (filepath) VALUES (?)`, [`/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`], function(){res.json({id:this.lastID})});
 };
 
+// Sections & Headers
 app.get('/api/headers', auth, getTable('header_sections'));
 app.post('/api/headers', auth, (req, res) => db.run(`INSERT INTO header_sections (title) VALUES (?)`, [req.body.title], function(){res.json({id:this.lastID})}));
 app.delete('/api/headers/:id', auth, (req, res) => {
@@ -165,10 +170,11 @@ app.delete('/api/sections/:id', auth, (req, res) => {
     });
 });
 
+// Cards
 app.get('/api/cards', auth, getTable('cards'));
 app.post('/api/cards', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
-    db.run(`INSERT INTO cards (filepath, section_id) VALUES (?,?)`, [`/uploads/cards/${req.file.filename}`, req.body.section_id||null], function(){res.json({id:this.lastID})});
+    db.run(`INSERT INTO cards (filepath, section_id) VALUES (?,?)`, [`/uploads/cards/${req.file.filename}`, req.body.section_id||null], function(){res.json({id:this.lastID, filepath:`/uploads/cards/${req.file.filename}`})});
 });
 app.delete('/api/cards/:id', auth, (req, res) => {
     db.get(`SELECT filepath FROM cards WHERE id=?`,[req.params.id],(e,r)=>{
@@ -183,6 +189,7 @@ app.post('/api/cards/:id/scratch', auth, (req, res) => {
 });
 app.get('/api/cards/:id/history', auth, (req, res) => db.all(`SELECT timestamp FROM card_history WHERE card_id=? ORDER BY timestamp DESC`, [req.params.id], (e,r)=>res.json(r||[])));
 
+// Books
 app.get('/api/books', auth, getTable('books'));
 app.post('/api/books', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
@@ -214,6 +221,7 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
     });
 });
 
+// Dice & Extras
 app.get('/api/dice', auth, getTable('dice_options'));
 app.put('/api/dice', auth, (req, res) => {
     const { items, role } = req.body;
@@ -224,7 +232,6 @@ app.put('/api/dice', auth, (req, res) => {
         s.finalize(); res.json({success:true});
     });
 });
-
 app.get('/api/locations', auth, getTable('location_unlocks'));
 app.post('/api/locations', auth, (req,res) => db.run(`INSERT INTO location_unlocks (name) VALUES (?)`,[req.body.name], function(){res.json({id:this.lastID})}));
 app.post('/api/locations/:id/toggle', auth, (req,res) => db.run(`UPDATE location_unlocks SET count=count+1, unlocked_at=? WHERE id=?`, [new Date().toISOString(), req.params.id], ()=>res.json({success:true})));
@@ -241,6 +248,7 @@ app.post('/api/fantasies/pull', auth, (req,res) => db.get(`SELECT * FROM fantasi
 app.post('/api/fantasies/:id/return', auth, (req,res) => db.run(`UPDATE fantasies SET pulled_at=NULL WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 app.delete('/api/fantasies/:id', auth, (req,res) => db.run(`DELETE FROM fantasies WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 
+// Galleries
 const gal = (t, sub) => {
     app.get(`/api/${t}`, auth, getTable(t));
     app.post(`/api/${t}`, auth, upload.single('file'), postFile(t));
@@ -256,14 +264,18 @@ gal('lingerie', 'lingerie');
 gal('condoms', 'condoms');
 gal('lubes', 'lubes');
 
+// Export
 app.get('/api/export', auth, (req, res) => {
     const ts = Date.now();
     const root = path.join('/tmp', `export_${ts}`);
     fs.mkdirSync(path.join(root, 'data'), {recursive:true});
+    
+    // Copy Helper
     const cp = (src, dest) => {
         const s = path.join(DATA_DIR,'uploads',src.replace(/^\/uploads\//,''));
         const d = path.join(root,'data',dest);
-        if(!fs.existsSync(path.dirname(d))) fs.mkdirSync(path.dirname(d), {recursive:true});
+        const dir = path.dirname(d);
+        if(!fs.existsSync(dir)) fs.mkdirSync(dir, {recursive:true});
         if(fs.existsSync(s)) fs.copyFileSync(s, d);
     };
 
@@ -274,13 +286,18 @@ app.get('/api/export', auth, (req, res) => {
                 cp(x.filepath, `Cards/${f}/${path.basename(x.filepath)}`);
             });
         });
-        ['books','toys','lingerie','condoms','lubes'].forEach(t => db.all(`SELECT filepath FROM ${t}`, [], (e,r)=>{ if(r) r.forEach(x=>cp(x.filepath, `${t}/${path.basename(x.filepath)}`)); }));
+        ['books','toys','lingerie','condoms','lubes'].forEach(t => {
+            db.all(`SELECT filepath FROM ${t}`, [], (e,r)=>{ if(r) r.forEach(x=>cp(x.filepath, `${t}/${path.basename(x.filepath)}`)); });
+        });
         
         setTimeout(() => {
-            exec(`cd /tmp && zip -r export_${ts}.zip export_${ts}`, (err) => {
+            const zipName = `privy_backup_${ts}.zip`;
+            // Ensure we are inside /tmp before zipping to avoid full paths
+            exec(`cd /tmp && zip -r ${zipName} export_${ts}`, (err) => {
                 if(err) return res.status(500).json({error:'Zip failed'});
-                res.download(`/tmp/export_${ts}.zip`, 'backup.zip', ()=>{
-                    fs.rmSync(root, {recursive:true}); fs.unlinkSync(`/tmp/export_${ts}.zip`);
+                res.download(`/tmp/${zipName}`, zipName, () => {
+                    fs.rmSync(root, {recursive:true, force:true});
+                    try { fs.unlinkSync(`/tmp/${zipName}`); } catch(e){}
                 });
             });
         }, 3000);

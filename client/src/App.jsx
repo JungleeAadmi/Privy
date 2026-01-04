@@ -58,6 +58,7 @@ const playSound = (type) => {
     } catch(e) {}
 };
 
+// --- Shared Components ---
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [revealed, setRevealed] = useState(false);
   const tap = useRef(0);
@@ -115,25 +116,24 @@ const CardItem = ({ card, onDelete, onClick }) => {
 };
 
 const SectionTab = ({ section, activeSection, setActiveSection, onLongPress }) => {
-    const longPress = useLongPress(() => onLongPress && onLongPress(section), 800);
-    const isActive = activeSection === section.id;
-    return ( <button {...longPress} onClick={() => setActiveSection(isActive ? null : section.id)} className={`px-4 py-2 rounded-full whitespace-nowrap transition border ${isActive ? 'bg-burgundy border-gold text-white' : 'bg-gray-900 border-gray-700 text-gray-400'}`}>{section.title}</button> );
+    const lp = useLongPress(() => onLongPress && onLongPress(section));
+    return ( <button {...lp} onClick={() => setActiveSection(activeSection===section.id?null:section.id)} className={`px-4 py-2 rounded-full border whitespace-nowrap ${activeSection===section.id ? 'bg-burgundy text-white border-gold' : 'text-gray-400 border-gray-600'}`}>{section.title}</button> );
 };
 
-const HeaderTab = ({ header, activeHeader, setActiveHeader }) => {
-    const isActive = activeHeader === header.id;
-    return ( <button onClick={() => setActiveHeader(isActive ? null : header.id)} className={`px-4 py-2 rounded-full whitespace-nowrap border transition ${isActive ? 'bg-eggplant border-gold text-gold font-bold' : 'bg-gray-900 border-gray-700 text-gray-500'}`}>{header.title}</button> );
+const HeaderTab = ({ header, activeHeader, setActiveHeader, onLongPress }) => {
+    const lp = useLongPress(() => onLongPress && onLongPress(header));
+    return ( <button {...lp} onClick={() => setActiveHeader(activeHeader===header.id?null:header.id)} className={`px-4 py-2 rounded-full border whitespace-nowrap ${activeHeader===header.id ? 'bg-eggplant text-white border-gold' : 'text-gray-400 border-gray-600'}`}>{header.title}</button> );
 };
 
 const GalleryItem = ({ item, onDeleteRequest }) => {
-    const longPress = useLongPress(() => onDeleteRequest(item.id), 800);
-    return (<div {...longPress} className="relative aspect-square bg-gray-900 rounded-lg overflow-hidden border border-gold/30"><img src={item.filepath} className="w-full h-full object-cover" /></div>);
+    const lp = useLongPress(() => onDeleteRequest(item.id));
+    return (<div {...lp} className="relative aspect-square bg-gray-900 rounded overflow-hidden border border-gold/30"><img src={item.filepath} className="w-full h-full object-cover" /></div>);
 };
 
 const LocationItem = ({ loc, onToggle, onDeleteRequest }) => {
-    const longPress = useLongPress(() => onDeleteRequest(loc), 800);
+    const lp = useLongPress(() => onDeleteRequest(loc));
     return (
-        <div {...longPress} onClick={() => onToggle(loc.id)} className={`p-4 rounded-xl border flex items-center justify-between transition ${loc.count > 0 ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}>
+        <div {...lp} onClick={() => onToggle(loc.id)} className={`p-4 rounded-xl border flex items-center justify-between transition ${loc.count > 0 ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}>
             <div className="flex items-center gap-4"><span className={`text-2xl font-bold ${loc.count > 0 ? 'text-gold' : 'text-gray-400'}`}>{loc.name}</span>{loc.count > 0 && <span className="bg-gold text-black text-xs font-bold px-2 py-0.5 rounded-full">{loc.count}x</span>}</div>
             {loc.count > 0 ? <CheckCircle className="text-green-500"/> : <div className="w-6 h-6 rounded-full border-2 border-gray-600"></div>}
         </div>
@@ -141,9 +141,9 @@ const LocationItem = ({ loc, onToggle, onDeleteRequest }) => {
 };
 
 const HistoryItem = ({ item, onReturn, onDeleteRequest }) => {
-    const longPress = useLongPress(() => onDeleteRequest(item), 800);
+    const lp = useLongPress(() => onDeleteRequest(item));
     return (
-        <div {...longPress} className="bg-gray-900 p-4 rounded-lg border border-gray-800 flex justify-between items-center">
+        <div {...lp} className="bg-gray-900 p-4 rounded-lg border border-gray-800 flex justify-between items-center">
             <div><p className="text-gold font-bold text-xl">{item.text}</p></div>
             <button onClick={() => onReturn(item.id)} className="text-xs bg-gray-800 px-2 py-1 rounded text-white flex gap-1"><RotateCw size={12}/> Return</button>
         </div>
@@ -151,11 +151,11 @@ const HistoryItem = ({ item, onReturn, onDeleteRequest }) => {
 };
 
 const BookItem = ({ book, onClick, onLongPress }) => {
-    const longPress = useLongPress(() => onLongPress(book), 800);
-    return ( <div {...longPress} onClick={() => onClick(book)} className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex flex-col items-center justify-center gap-4 cursor-pointer shadow-md group select-none"><Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/><div className="overflow-hidden w-full text-center"><h3 className="text-xl text-white truncate w-full">{book.title}</h3><p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p></div></div> );
+    const lp = useLongPress(() => onLongPress(book));
+    return ( <div {...lp} onClick={() => onClick(book)} className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex flex-col items-center justify-center gap-4 cursor-pointer text-center"><Book size={32} className="text-burgundy"/><h3 className="text-white truncate w-full">{book.title}</h3></div> );
 };
 
-// --- PAGES ---
+// --- Pages ---
 
 const Auth = ({ setUser }) => {
   const [isLogin, setIsLogin] = useState(true);
@@ -168,15 +168,15 @@ const Auth = ({ setUser }) => {
     else alert("Error");
   };
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-gold p-6">
-      <h1 className="text-4xl mb-8">{isLogin ? 'Login' : 'Register'}</h1>
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
-        <input className="w-full p-2 bg-black border border-gold rounded text-white" placeholder="Username" onChange={e => setForm({...form, username: e.target.value})} />
-        <input className="w-full p-2 bg-black border border-gold rounded text-white" type="password" placeholder="Password" onChange={e => setForm({...form, password: e.target.value})} />
-        {!isLogin && <input className="w-full p-2 bg-black border border-gold rounded text-white" placeholder="Name" onChange={e => setForm({...form, name: e.target.value})} />}
-        <button className="w-full bg-red-600 text-white py-2 rounded font-bold">{isLogin ? 'Enter' : 'Sign Up'}</button>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-eggplant via-burgundy to-black text-gold p-6 font-caveat">
+      <h1 className="text-6xl mb-8 drop-shadow-lg">{isLogin ? 'Privy Login' : 'Join Privy'}</h1>
+      <form onSubmit={handleSubmit} className="bg-black/50 p-8 rounded-2xl border border-gold/30 backdrop-blur-md w-full max-w-sm space-y-4">
+        <input className="w-full p-3 bg-gray-900 border border-burgundy rounded text-white" placeholder="Username" onChange={e => setForm({...form, username: e.target.value})} />
+        <input className="w-full p-3 bg-gray-900 border border-burgundy rounded text-white" type="password" placeholder="Password" onChange={e => setForm({...form, password: e.target.value})} />
+        {!isLogin && <><input className="w-full p-3 bg-gray-900 border border-burgundy rounded text-white" placeholder="Name" onChange={e => setForm({...form, name: e.target.value})} /><div className="flex gap-2"><input className="w-1/2 p-3 bg-gray-900 border border-burgundy rounded text-white" type="number" placeholder="Age" onChange={e => setForm({...form, age: e.target.value})} /><select className="w-1/2 p-3 bg-gray-900 border border-burgundy rounded text-white" onChange={e => setForm({...form, gender: e.target.value})}><option value="">Gender</option><option value="Male">Male</option><option value="Female">Female</option></select></div></>}
+        <button className="w-full bg-lipstick hover:bg-red-700 text-white font-bold py-3 rounded shadow-lg">{isLogin ? 'Enter' : 'Sign Up'}</button>
       </form>
-      <button onClick={() => setIsLogin(!isLogin)} className="mt-4 text-sm underline">{isLogin ? "Create Account" : "Login"}</button>
+      <button onClick={() => setIsLogin(!isLogin)} className="mt-4 text-sm underline hover:text-white">{isLogin ? "Create Account" : "Login"}</button>
     </div>
   );
 };
@@ -219,14 +219,14 @@ const Gallery = ({ title, endpoint, icon }) => {
                     {!drawing && <button onClick={()=>setWinner(null)} className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-full"><X/></button>}
                 </div>
             ) : (
-                <button onClick={draw} disabled={drawing || items.length===0} className="w-full max-w-sm aspect-video bg-gray-800 border-2 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 mb-6">
+                <button onClick={draw} disabled={drawing || items.length===0} className="w-full max-w-sm aspect-video bg-gray-800 border-2 border-dashed border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-400 mb-6 transition active:scale-95">
                     {drawing ? <RefreshCw className="animate-spin"/> : <Shuffle size={40}/>}
-                    <span className="mt-2 font-bold">TAP TO DRAW</span>
+                    <span className="mt-2 font-bold">{items.length>0 ? "TAP TO DRAW" : "Empty Collection"}</span>
                 </button>
             )}
             <div className="w-full flex justify-end mb-4"><button onClick={()=>setEditing(!editing)} className="border border-gold text-gold px-4 py-1 rounded-full text-sm">{editing?'Done':'Manage'}</button></div>
-            {editing && <div className="w-full grid grid-cols-3 gap-2">
-                <label className="aspect-square bg-gray-800 border-2 border-dashed border-gray-600 rounded flex flex-col items-center justify-center cursor-pointer"><Plus className="text-gray-400"/><input type="file" className="hidden" multiple accept="image/*" onChange={upload} /></label>
+            {editing && <div className="w-full grid grid-cols-3 gap-2 animate-fadeIn">
+                <label className="aspect-square bg-gray-800 border-2 border-dashed border-gray-600 rounded flex flex-col items-center justify-center cursor-pointer"><Plus className="text-gray-400"/><span className="text-xs text-gray-500 mt-1">Add</span><input type="file" className="hidden" multiple accept="image/*" onChange={upload} /></label>
                 {items.map(i => <GalleryItem key={i.id} item={i} onDeleteRequest={setDelId} />)}
             </div>}
             {delId && <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center"><p className="text-white mb-4">Delete Item?</p><button onClick={del} className="bg-red-600 text-white px-4 py-2 rounded">Delete</button><button onClick={()=>setDelId(null)} className="ml-4 text-gray-400">Cancel</button></div></div>}
@@ -269,7 +269,7 @@ const Spin = () => {
     const spin = () => {
         if(cards.length===0) return alert("No cards!");
         setSpinState(p => ({...p, spinning:true, winner:null}));
-        const winIdx = Math.floor(Math.random() * cards.length); // Logic simplified for wheel visual
+        const winIdx = Math.floor(Math.random() * cards.length);
         const winner = cards[winIdx];
         const rot = p => p + 1800 + Math.random()*360;
         setSpinState(p => ({...p, rotation: rot(p.rotation)}));
@@ -292,7 +292,7 @@ const Spin = () => {
                {/* Wheel segments visual simplified */}
                <div className="text-white font-bold">SPIN</div>
             </div>
-            <button onClick={spin} disabled={spinState.spinning} className="mt-8 px-8 py-3 bg-gold text-black font-bold rounded-full">SPIN</button>
+            <button onClick={spin} disabled={spinState.spinning} className="mt-8 px-8 py-3 bg-gold text-black font-bold rounded-full shadow-lg active:scale-95 transition">SPIN</button>
             {spinState.winner && <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4">
                 <div className="relative w-full max-w-sm h-[60vh]"><img src={spinState.winner.filepath} className="w-full h-full object-contain"/><button onClick={()=>setSpinState(p=>({...p, winner:null}))} className="absolute top-0 right-0 p-2 bg-black text-white"><X/></button></div>
                 <div className="mt-4 flex gap-4"><button onClick={()=>setHistory(true)} className="text-gold flex gap-2 items-center"><Clock/> History</button></div>
@@ -341,7 +341,7 @@ const DiceGame = () => {
         return () => clearInterval(i);
     }, [timeLeft]);
 
-    if(edit) return <div className="p-4 text-white"><button onClick={()=>setEdit(false)}>Back</button><h1>Edit Dice ({activeRole})</h1><p>Edit functionality here...</p></div>;
+    if(edit) return <div className="p-4 text-white"><button onClick={()=>setEdit(false)}>Back</button><h1>Edit Dice ({activeRole})</h1><p>Use Desktop to edit for now.</p></div>;
 
     return (
         <div className="flex flex-col items-center pt-10 gap-6 w-full">
@@ -353,15 +353,15 @@ const DiceGame = () => {
             </div>
             {timeLeft > 0 && <div className="text-7xl font-mono text-red-500 font-bold">{timeLeft}</div>}
             <div className="flex gap-4">
-                {!rolling && result.time !== '?' && result.time !== '∞' && <button onClick={timer} className="p-4 rounded-full bg-green-600 text-white"><Play/></button>}
-                <button onClick={roll} disabled={rolling} className="px-8 py-3 bg-gold text-black font-bold rounded-full">ROLL</button>
+                {!rolling && result.time !== '?' && result.time !== '∞' && <button onClick={timer} className="p-4 rounded-full bg-green-600 text-white shadow-lg active:scale-95"><Play/></button>}
+                <button onClick={roll} disabled={rolling} className="px-8 py-3 bg-gold text-black font-bold rounded-full shadow-lg active:scale-95 transition">ROLL</button>
             </div>
             <button onClick={()=>setEdit(true)} className="text-gray-500 flex items-center gap-2"><Edit2 size={16}/> Edit</button>
         </div>
     );
 };
 
-const Settings = ({user, logout}) => <div className="p-6 text-white"><h2 className="text-2xl mb-4">Settings</h2><button onClick={logout} className="text-red-500 flex items-center gap-2 border border-red-500 px-4 py-2 rounded"><LogOut/> Logout</button></div>;
+const Settings = ({user, logout}) => <div className="p-6 text-white"><h2 className="text-2xl mb-4 text-gold">Settings</h2><button onClick={logout} className="text-red-500 flex items-center gap-2 border border-red-500 px-4 py-2 rounded"><LogOut/> Logout</button></div>;
 const Notifications = () => <div className="p-6 text-white">Notifications Settings</div>;
 
 const Home = () => {
@@ -378,6 +378,9 @@ const Home = () => {
     const [newSection, setNewSection] = useState("");
     const [showHeaderInput, setShowHeaderInput] = useState(false);
     const [showSectionInput, setShowSectionInput] = useState(false);
+    const [sectionMenu, setSectionMenu] = useState(null);
+    const [moveTarget, setMoveTarget] = useState(null);
+    const [headerMenu, setHeaderMenu] = useState(null);
 
     const refresh = async () => {
         const h = { Authorization: `Bearer ${localStorage.getItem('token')}` };
@@ -396,6 +399,9 @@ const Home = () => {
         refresh();
     };
     const deleteCard = async () => { await safeFetch(`${API_URL}/cards/${deleteId}`, { method:'DELETE', headers:{Authorization:`Bearer ${localStorage.getItem('token')}`} }); setDeleteId(null); refresh(); };
+    const deleteSection = async () => { await safeFetch(`${API_URL}/sections/${sectionMenu.id}`, { method:'DELETE', headers:{Authorization:`Bearer ${localStorage.getItem('token')}`} }); setSectionMenu(null); refresh(); };
+    const deleteHeader = async () => { await safeFetch(`${API_URL}/headers/${headerMenu.id}`, { method:'DELETE', headers:{Authorization:`Bearer ${localStorage.getItem('token')}`} }); setHeaderMenu(null); setActiveHeader(null); refresh(); };
+    const moveSection = async (hid) => { await safeFetch(`${API_URL}/sections/${sectionMenu.id}`, { method:'PUT', headers:{'Content-Type':'application/json', Authorization:`Bearer ${localStorage.getItem('token')}`}, body:JSON.stringify({title:sectionMenu.title, header_id:hid}) }); setMoveTarget(null); setSectionMenu(null); refresh(); };
 
     const filSections = activeHeader ? sections.filter(s => s.header_id === activeHeader) : sections.filter(s => !s.header_id);
     const filCards = cards.filter(c => activeSection ? c.section_id === activeSection : !c.section_id);
@@ -403,14 +409,20 @@ const Home = () => {
     return (
         <div className="pb-24 px-4 w-full">
             <div className="flex gap-2 overflow-x-auto p-2 pb-0 no-scrollbar">
-                <button onClick={()=>setActiveHeader(null)} className={`px-4 py-1 rounded-full border text-sm ${!activeHeader?'bg-gold text-black':'text-gray-400'}`}>Unsorted</button>
-                {headers.map(h => <button key={h.id} onClick={()=>setActiveHeader(h.id)} className={`px-4 py-1 rounded-full border text-sm ${activeHeader===h.id?'bg-gold text-black':'text-gray-400'}`}>{h.title}</button>)}
+                <button onClick={()=>setActiveHeader(null)} className={`px-4 py-1 rounded-full border text-sm ${!activeHeader?'bg-gold text-black':'text-gray-400 border-gray-600'}`}>Unsorted</button>
+                {headers.map(h => {
+                    const lp = useLongPress(()=>setHeaderMenu(h));
+                    return <button key={h.id} {...lp} onClick={()=>setActiveHeader(h.id)} className={`px-4 py-1 rounded-full border text-sm ${activeHeader===h.id?'bg-gold text-black':'text-gray-400 border-gray-600'}`}>{h.title}</button>
+                })}
                 <button onClick={()=>setShowHeaderInput(true)} className="px-2 rounded-full border text-gray-400"><Plus/></button>
             </div>
             {showHeaderInput && <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"><div className="bg-gray-800 p-4 rounded"><input value={newHeader} onChange={e=>setNewHeader(e.target.value)} className="text-black p-2 rounded"/><button onClick={addHeader} className="ml-2 bg-gold p-2 rounded">Add</button><button onClick={()=>setShowHeaderInput(false)} className="ml-2 text-white">X</button></div></div>}
 
             <div className="flex gap-2 overflow-x-auto p-2 pb-4 no-scrollbar bg-white/5 mt-2 rounded">
-                {filSections.map(s => <button key={s.id} onClick={()=>setActiveSection(s.id===activeSection?null:s.id)} className={`px-4 py-1 rounded-full border text-sm ${activeSection===s.id?'bg-red-600 text-white':'text-gray-400'}`}>{s.title}</button>)}
+                {filSections.map(s => {
+                    const lp = useLongPress(()=>setSectionMenu(s));
+                    return <button key={s.id} {...lp} onClick={()=>setActiveSection(s.id===activeSection?null:s.id)} className={`px-4 py-1 rounded-full border text-sm ${activeSection===s.id?'bg-red-600 text-white':'text-gray-400'}`}>{s.title}</button>
+                })}
                 <button onClick={()=>setShowSectionInput(true)} className="px-2 rounded-full border text-gray-400"><Plus/></button>
             </div>
             {showSectionInput && <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"><div className="bg-gray-800 p-4 rounded"><input value={newSection} onChange={e=>setNewSection(e.target.value)} className="text-black p-2 rounded"/><button onClick={addSection} className="ml-2 bg-gold p-2 rounded">Add</button><button onClick={()=>setShowSectionInput(false)} className="ml-2 text-white">X</button></div></div>}
@@ -423,8 +435,12 @@ const Home = () => {
                 {filCards.map(c => <CardItem key={c.id} card={c} onDeleteRequest={setDeleteId} onClick={setSelectedCard} />)}
             </div>
 
+            {/* Modals */}
             {selectedCard && <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"><div className="relative h-[80%]"><img src={selectedCard.filepath} className="h-full object-contain"/><button onClick={()=>setSelectedCard(null)} className="absolute top-0 right-0 p-4 text-white"><X/></button></div></div>}
-            {deleteId && <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center"><p className="text-white mb-4">Delete?</p><button onClick={deleteCard} className="bg-red-600 text-white px-4 py-2 rounded">Yes</button><button onClick={()=>setDeleteId(null)} className="ml-4 text-gray-400">No</button></div></div>}
+            {deleteId && <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center"><p className="text-white mb-4">Delete Card?</p><button onClick={deleteCard} className="bg-red-600 text-white px-4 py-2 rounded">Yes</button><button onClick={()=>setDeleteId(null)} className="ml-4 text-gray-400">No</button></div></div>}
+            {headerMenu && <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center"><p className="text-white mb-4">Delete Category "{headerMenu.title}"?</p><button onClick={deleteHeader} className="bg-red-600 text-white px-4 py-2 rounded">Delete</button><button onClick={()=>setHeaderMenu(null)} className="ml-4 text-gray-400">Cancel</button></div></div>}
+            {sectionMenu && !moveTarget && <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center flex flex-col gap-4"><h3 className="text-gold text-xl">{sectionMenu.title}</h3><button onClick={()=>setMoveTarget(true)} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 justify-center"><Grid/> Move to Category</button><button onClick={deleteSection} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2 justify-center"><Trash2/> Delete Section</button><button onClick={()=>setSectionMenu(null)} className="text-gray-400">Cancel</button></div></div>}
+            {moveTarget && <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded w-64 max-h-[80vh] overflow-y-auto"><h3 className="text-white mb-4">Move to...</h3><button onClick={()=>moveSection(null)} className="w-full text-left p-2 border-b border-gray-600 text-gray-300">Unsorted</button>{headers.map(h=><button key={h.id} onClick={()=>moveSection(h.id)} className="w-full text-left p-2 border-b border-gray-600 text-gold">{h.title}</button>)}<button onClick={()=>setMoveTarget(null)} className="mt-4 text-gray-400 w-full">Cancel</button></div></div>}
         </div>
     );
 };
@@ -464,7 +480,7 @@ const Layout = ({ children, user, logout }) => {
 
 export default function App() {
   const [user, setUser] = useState(null);
-  useEffect(() => { const saved = localStorage.getItem('user'); if(saved) setUser(JSON.parse(saved)); }, []);
+  useEffect(() => { try { const u = JSON.parse(localStorage.getItem('user')); if(u) setUser(u); } catch(e){} }, []);
   const logout = () => { localStorage.clear(); setUser(null); };
   return (<ErrorBoundary>{!user ? <Auth setUser={setUser}/> : <Router><Layout user={user} logout={logout}><Routes>
       <Route path="/" element={<Home/>}/>
