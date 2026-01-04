@@ -1,6 +1,6 @@
 /**
  * Privy Backend - Node.js
- * STABLE BASE VERSION (No Export, No Headers, No Calendar)
+ * STABLE VERSION + Calendar & Tracker
  */
 
 const express = require('express');
@@ -51,7 +51,8 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
     
     db.run(`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, scratched_count INTEGER DEFAULT 0, section_id INTEGER)`);
-    db.run(`CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, header_id INTEGER)`);
+    db.run(`CREATE TABLE IF NOT EXISTS header_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS card_history (id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(card_id) REFERENCES cards(id))`);
     
     db.run(`CREATE TABLE IF NOT EXISTS books (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, filepath TEXT)`);
@@ -68,6 +69,9 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
 
+    // Calendar Notes (NEW)
+    db.run(`CREATE TABLE IF NOT EXISTS calendar_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+
     // Safe Migrations
     const runMigration = (sql) => {
         try {
@@ -78,30 +82,7 @@ db.serialize(() => {
     };
     runMigration(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`);
     runMigration(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`);
-
-    // Seed Data
-    db.get("SELECT count(*) as count FROM dice_options", (err, row) => {
-        if (!err && row && row.count === 0) {
-            const defaults = [
-                ['act', 'Kiss', 'wife'], ['act', 'Lick', 'wife'],
-                ['location', 'Neck', 'wife'], ['location', 'Ears', 'wife'],
-                ['act', 'Kiss', 'husband'], ['act', 'Lick', 'husband'],
-                ['location', 'Neck', 'husband'], ['location', 'Ears', 'husband']
-            ];
-            const stmt = db.prepare("INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)");
-            defaults.forEach(d => stmt.run(d));
-            stmt.finalize();
-        }
-    });
-
-    db.get("SELECT count(*) as count FROM location_unlocks", (err, row) => {
-        if (!err && row && row.count === 0) {
-            const defaults = ['Kitchen', 'Shower', 'Car', 'Balcony', 'Hotel'];
-            const stmt = db.prepare("INSERT INTO location_unlocks (name) VALUES (?)");
-            defaults.forEach(d => stmt.run(d));
-            stmt.finalize();
-        }
-    });
+    runMigration(`ALTER TABLE sections ADD COLUMN header_id INTEGER`);
 });
 
 // --- Ntfy Helper ---
@@ -131,12 +112,11 @@ const sendNtfy = (itemId, type = 'card') => {
                     const stats = fs.statSync(absPath);
                     const fileBuffer = fs.readFileSync(absPath);
                     const filename = `${type}_${itemId}_${Date.now()}.jpg`;
-
                     const u = new URL(`${settings.ntfy_url.replace(/\/$/, '')}/${settings.ntfy_topic}`);
                     u.searchParams.append('message', message);
                     u.searchParams.append('title', title);
                     u.searchParams.append('filename', filename);
-
+                    
                     if (typeof fetch === 'function') {
                         fetch(u.toString(), {
                             method: 'POST',
@@ -150,26 +130,28 @@ const sendNtfy = (itemId, type = 'card') => {
     });
 };
 
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        let folder = 'cards';
-        if (req.path.includes('book')) folder = 'books';
-        else if (req.path.includes('toy')) folder = 'toys';
-        else if (req.path.includes('lingerie')) folder = 'lingerie';
-        else if (req.path.includes('condom')) folder = 'condoms';
-        else if (req.path.includes('lube')) folder = 'lubes';
-        
-        const dir = path.join(DATA_DIR, 'uploads', folder);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        cb(null, dir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9.]/g, '_'));
-    }
+const upload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+            let folder = 'cards';
+            if (req.path.includes('book')) folder = 'books';
+            else if (req.path.includes('toy')) folder = 'toys';
+            else if (req.path.includes('lingerie')) folder = 'lingerie';
+            else if (req.path.includes('condom')) folder = 'condoms';
+            else if (req.path.includes('lube')) folder = 'lubes';
+            const dir = path.join(DATA_DIR, 'uploads', folder);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            cb(null, dir);
+        },
+        filename: (req, file, cb) => {
+            cb(null, Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9.]/g, '_'));
+        }
+    })
 });
-const upload = multer({ storage });
+
 const auth = (req, res, next) => {
     let token = req.headers['authorization'];
+    if (!token && req.query.token) token = 'Bearer ' + req.query.token;
     if (!token) return res.status(403).json({ error: 'No token' });
     try {
         const t = token.startsWith('Bearer ') ? token.split(' ')[1] : token;
@@ -180,7 +162,6 @@ const auth = (req, res, next) => {
 
 // --- ROUTES ---
 
-// Auth
 app.post('/api/register', (req, res) => {
     const hash = bcrypt.hashSync(req.body.password, 8);
     db.run(`INSERT INTO users (username, password) VALUES (?,?)`, [req.body.username, hash], function(err) {
@@ -188,12 +169,14 @@ app.post('/api/register', (req, res) => {
         res.json({success:true, id:this.lastID});
     });
 });
+
 app.post('/api/login', (req, res) => {
     db.get(`SELECT * FROM users WHERE username = ?`, [req.body.username], (err, user) => {
         if (!user || !bcrypt.compareSync(req.body.password, user.password)) return res.status(400).json({ error: 'Invalid credentials' });
         res.json({ token: jwt.sign({ id: user.id, name: user.name }, SECRET_KEY), user });
     });
 });
+
 app.put('/api/user', auth, (req, res) => {
     let sql = `UPDATE users SET name = ? WHERE id = ?`, params = [req.body.name, req.user.id];
     if(req.body.password) { 
@@ -213,18 +196,40 @@ app.get('/api/settings', auth, (req, res) => {
 app.put('/api/settings', auth, (req, res) => {
     db.serialize(() => {
         const s = db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`);
-        s.run('ntfy_url', req.body.ntfy_url);
-        s.run('ntfy_topic', req.body.ntfy_topic);
+        if (req.body.ntfy_url) { s.run('ntfy_url', req.body.ntfy_url); s.run('ntfy_topic', req.body.ntfy_topic); }
+        if (req.body.cycle_start) { s.run('cycle_start', req.body.cycle_start); s.run('cycle_len', req.body.cycle_len); s.run('period_len', req.body.period_len); }
         s.finalize();
         res.json({success:true});
     });
 });
-app.post('/api/settings/test', auth, (req, res) => {
-    const { ntfy_url, ntfy_topic } = req.body;
-    if(!ntfy_url) return res.status(400).json({error:'No Config'});
-    const u = new URL(`${ntfy_url.replace(/\/$/,'')}/${ntfy_topic}`);
-    if(typeof fetch !== 'function') return res.status(500).json({error:'Fetch missing'});
-    fetch(u.toString(), {method:'POST', body:'Test'}).then(r=>{if(r.ok)res.json({success:true});else res.status(500).json({error:r.status})}).catch(e=>res.status(500).json({error:e.message}));
+
+// Calendar Notes (NEW)
+app.get('/api/calendar', auth, (req, res) => {
+    db.all('SELECT * FROM calendar_notes', [], (err, rows) => res.json(rows || []));
+});
+app.post('/api/calendar', auth, (req, res) => {
+    db.run('INSERT INTO calendar_notes (date, text) VALUES (?,?)', [req.body.date, req.body.text], function(err) {
+        if(err) return res.status(500).json({error: err.message});
+        res.json({id: this.lastID});
+    });
+});
+app.delete('/api/calendar/:id', auth, (req, res) => {
+    db.run('DELETE FROM calendar_notes WHERE id=?', [req.params.id], (err) => res.json({success: true}));
+});
+
+
+// Headers
+app.get('/api/headers', auth, (req, res) => {
+    db.all(`SELECT * FROM header_sections`, [], (err, rows) => res.json(rows || []));
+});
+app.post('/api/headers', auth, (req, res) => {
+    db.run(`INSERT INTO header_sections (title) VALUES (?)`, [req.body.title], function(err){ res.json({id:this.lastID}); });
+});
+app.delete('/api/headers/:id', auth, (req, res) => {
+    db.serialize(() => {
+        db.run(`UPDATE sections SET header_id = NULL WHERE header_id = ?`, [req.params.id]);
+        db.run(`DELETE FROM header_sections WHERE id = ?`, [req.params.id], () => res.json({success:true}));
+    });
 });
 
 // Sections
@@ -232,10 +237,10 @@ app.get('/api/sections', auth, (req, res) => {
     db.all(`SELECT * FROM sections`, [], (err, rows) => res.json(rows || []));
 });
 app.post('/api/sections', auth, (req, res) => {
-    db.run(`INSERT INTO sections (title) VALUES (?)`, [req.body.title], function(err){ res.json({id:this.lastID}); });
+    db.run(`INSERT INTO sections (title, header_id) VALUES (?, ?)`, [req.body.title, req.body.header_id || null], function(err){ res.json({id:this.lastID}); });
 });
 app.put('/api/sections/:id', auth, (req, res) => {
-    db.run(`UPDATE sections SET title=? WHERE id=?`, [req.body.title, req.params.id], () => res.json({success:true}));
+    db.run(`UPDATE sections SET title=?, header_id=? WHERE id=?`, [req.body.title, req.body.header_id, req.params.id], () => res.json({success:true}));
 });
 app.delete('/api/sections/:id', auth, (req, res) => {
     db.all(`SELECT filepath FROM cards WHERE section_id = ?`, [req.params.id], (err, rows) => {
