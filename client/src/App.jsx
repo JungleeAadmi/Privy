@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, Download, Grid, ChevronLeft, ChevronRight, Notebook } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, Download, Grid, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -302,13 +302,10 @@ const Gallery = ({ title, endpoint, icon }) => {
                 <button onClick={() => setIsEditing(!isEditing)} className={`flex items-center gap-2 px-4 py-2 rounded-full border transition ${isEditing ? 'bg-gold text-black border-gold' : 'bg-transparent text-gray-400 border-gray-700'}`}><Edit2 size={16}/> {isEditing ? 'Done' : 'Manage'}</button>
             </div>
             {isEditing && (
-                <>
-                <div className="w-full mb-2 text-center text-xs text-gray-500">Long press an item to delete</div>
                 <div className="w-full grid grid-cols-3 gap-2 animate-fadeIn">
                     <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40"><Plus className="text-burgundy"/><span className="text-xs text-burgundy mt-1">Add</span><input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} /></label>
                     {items.map(item => (<GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />))}
                 </div>
-                </>
             )}
             {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Item?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
         </div>
@@ -601,11 +598,96 @@ const Layout = ({ children, user, logout }) => {
             {p:'/',i:<Layers/>,l:'Cards'},{p:'/spin',i:<Aperture/>,l:'Spin'},{p:'/dice',i:<Dices/>,l:'Dice'},
             {p:'/extras',i:<Sparkles/>,l:'Extras'},{p:'/books',i:<Book/>,l:'Books'},{p:'/toys',i:<Zap/>,l:'Toys'},
             {p:'/lingerie',i:<Shirt/>,l:'Lingerie'},{p:'/protection',i:<Shield/>,l:'Safety'},{p:'/tracker',i:<Calendar/>,l:'Cycle'}
-        ].map(x=><Link key={x.p} to={x.p} className={`flex flex-col items-center min-w-[50px] ${loc.pathname===x.p?'text-lipstick':'text-gray-500'}`}>{x.i}<span className="text-xs">{x.l}</span></Link>)}
+        ].map(x=><Link key={x.p} to={x.p} className={`flex flex-col items-center min-w-[50px] ${location.pathname===x.p?'text-lipstick':'text-gray-500'}`}>{x.i}<span className="text-xs">{x.l}</span></Link>)}
       </nav>
       {showResetModal && (<div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"><div className="bg-gray-900 border border-red-500 p-6 rounded-xl w-80 text-center shadow-2xl"><AlertTriangle size={48} className="mx-auto text-red-500 mb-4" /><h3 className="text-white text-2xl mb-2 font-bold">App Reset</h3><p className="text-gray-400 text-sm mb-6">{resetStep === 1 ? "This will reset all scratch counts and history to zero. This cannot be undone." : "Are you really sure? This is your last chance."}</p><input className="w-full p-3 bg-black border border-gray-700 rounded text-white text-center tracking-widest mb-4 uppercase" placeholder="Type RESET" value={resetInput} onChange={e => setResetInput(e.target.value.toUpperCase())} /><div className="flex justify-center gap-4"><button onClick={() => { setShowResetModal(false); setResetStep(1); setResetInput(""); }} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleResetSubmit} className={`px-4 py-2 rounded font-bold text-white ${resetInput === 'RESET' ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 cursor-not-allowed'}`} disabled={resetInput !== 'RESET'}>{resetStep === 1 ? "Next Step" : "CONFIRM RESET"}</button></div></div></div>)}
     </div>
   );
+};
+
+const Home = () => {
+    const [cards, setCards] = useState([]);
+    const [sections, setSections] = useState([]);
+    const [headers, setHeaders] = useState([]);
+    const [activeHeader, setActiveHeader] = useState(null);
+    const [activeSection, setActiveSection] = useState(null);
+    const [selectedCard, setSelectedCard] = useState(null);
+    const [deleteId, setDeleteId] = useState(null);
+    
+    // CRUD States
+    const [newHeader, setNewHeader] = useState("");
+    const [newSection, setNewSection] = useState("");
+    const [showHeaderInput, setShowHeaderInput] = useState(false);
+    const [showSectionInput, setShowSectionInput] = useState(false);
+    const [sectionMenu, setSectionMenu] = useState(null);
+    const [moveTarget, setMoveTarget] = useState(null);
+    const [headerMenu, setHeaderMenu] = useState(null);
+    const [showHistory, setShowHistory] = useState(false);
+    const [isCreatingSection, setIsCreatingSection] = useState(false);
+    const [isCreatingHeader, setIsCreatingHeader] = useState(false);
+    const [renameText, setRenameText] = useState("");
+    const [isRenamingSection, setIsRenamingSection] = useState(false);
+
+    const fetchData = async () => {
+        const h = { Authorization: `Bearer ${localStorage.getItem('token')}` };
+        const [c, s, hd] = await Promise.all([safeFetch(`${API_URL}/cards`,{headers:h}), safeFetch(`${API_URL}/sections`,{headers:h}), safeFetch(`${API_URL}/headers`,{headers:h})]);
+        if(Array.isArray(c)) setCards(c);
+        if(Array.isArray(s)) setSections(s);
+        if(Array.isArray(hd)) setHeaders(hd);
+    };
+    useEffect(() => { fetchData(); const interval = setInterval(fetchData, 5000); return () => clearInterval(interval); }, []);
+
+    const handleUpload = async (e) => { const files = Array.from(e.target.files); if(files.length === 0) return; for(const f of files) { const fd = new FormData(); fd.append('file', f); if(activeSection) fd.append('section_id', activeSection); await safeFetch(`${API_URL}/cards`, { method:'POST', headers:{ Authorization:`Bearer ${localStorage.getItem('token')}` }, body:fd }); } fetchData(); };
+    const handleCreateSection = async () => { if(!newSectionName.trim()) return; await safeFetch(`${API_URL}/sections`, { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('token')}`}, body:JSON.stringify({title:newSectionName,header_id:activeHeader}) }); setNewSectionName(""); setIsCreatingSection(false); fetchData(); };
+    const handleCreateHeader = async () => { if(!newHeaderName.trim()) return; await safeFetch(`${API_URL}/headers`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('token')}`},body:JSON.stringify({title:newHeaderName})}); setNewHeaderName(""); setIsCreatingHeader(false); fetchData(); };
+    const handleMoveSection = async (hid) => { await safeFetch(`${API_URL}/sections/${sectionMenu.id}`,{method:'PUT',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('token')}`},body:JSON.stringify({title:sectionMenu.title,header_id:hid})}); setMoveTarget(null); setSectionMenu(null); fetchData(); };
+    const handleDeleteSection = async () => { await safeFetch(`${API_URL}/sections/${sectionMenu.id}`,{method:'DELETE',headers:{Authorization:`Bearer ${localStorage.getItem('token')}`}}); setSectionMenu(null); fetchData(); };
+    const handleDeleteHeader = async () => { await safeFetch(`${API_URL}/headers/${headerMenu.id}`,{method:'DELETE',headers:{Authorization:`Bearer ${localStorage.getItem('token')}`}}); setHeaderMenu(null); setActiveHeader(null); fetchData(); };
+    const handleDeleteCard = async () => { await safeFetch(`${API_URL}/cards/${deleteId}`,{method:'DELETE',headers:{Authorization:`Bearer ${localStorage.getItem('token')}`}}); setDeleteId(null); fetchData(); };
+    const handleRenameSection = async () => { if(!renameText.trim()) return; await safeFetch(`${API_URL}/sections/${sectionMenu.id}`,{method:'PUT',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('token')}`},body:JSON.stringify({title:renameText, header_id:sectionMenu.header_id})}); setSectionMenu(null); setIsRenamingSection(false); fetchData(); };
+    const handleReveal = async (id) => { await safeFetch(`${API_URL}/cards/${id}/scratch`, { method:'POST', headers:{ Authorization:`Bearer ${localStorage.getItem('token')}` } }); setCards(prev => prev.map(c => c.id === id ? {...c, scratched_count: c.scratched_count + 1} : c)); };
+    const shuffleCards = () => { setCards([...cards].sort(() => Math.random() - 0.5)); };
+
+    const filSections = activeHeader ? sections.filter(s => s.header_id === activeHeader) : sections.filter(s => !s.header_id);
+    const filCards = cards.filter(c => activeSection ? c.section_id === activeSection : !c.section_id);
+
+    return (
+        <div className="pb-24 px-4 w-full">
+            <div className="flex gap-2 overflow-x-auto p-2 pb-0 no-scrollbar">
+                <button onClick={()=>setActiveHeader(null)} className={`px-4 py-1 rounded-full border text-sm ${!activeHeader?'bg-gold text-black':'text-gray-400 border-gray-600'}`}>Unsorted</button>
+                {headers.map(h => {
+                    const lp = useLongPress(()=>setHeaderMenu(h));
+                    return <button key={h.id} {...lp} onClick={()=>setActiveHeader(h.id)} className={`px-4 py-1 rounded-full border text-sm ${activeHeader===h.id?'bg-gold text-black':'text-gray-400 border-gray-600'}`}>{h.title}</button>
+                })}
+                <button onClick={()=>setIsCreatingHeader(true)} className="px-2 rounded-full border text-gray-400"><Plus/></button>
+            </div>
+            {isCreatingHeader && <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"><div className="bg-gray-800 p-4 rounded"><input value={newHeaderName} onChange={e=>setNewHeaderName(e.target.value)} className="text-black p-2 rounded" placeholder="Category Name"/><button onClick={handleCreateHeader} className="ml-2 bg-gold p-2 rounded">Add</button><button onClick={()=>setIsCreatingHeader(false)} className="ml-2 text-white">X</button></div></div>}
+
+            <div className="flex gap-2 overflow-x-auto p-2 no-scrollbar bg-white/5 mt-2 rounded">
+                {filSections.map(s => {
+                    const lp = useLongPress(()=>setSectionMenu(s));
+                    return <button key={s.id} {...lp} onClick={()=>setActiveSection(s.id===activeSection?null:s.id)} className={`px-4 py-1 rounded-full border text-sm ${activeSection===s.id?'bg-red-600 text-white':'text-gray-400'}`}>{s.title}</button>
+                })}
+                <button onClick={()=>setIsCreatingSection(true)} className="px-2 rounded-full border text-gray-400"><Plus/></button>
+            </div>
+            {isCreatingSection && <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"><div className="bg-gray-800 p-4 rounded"><input value={newSectionName} onChange={e=>setNewSectionName(e.target.value)} className="text-black p-2 rounded" placeholder="Section Name"/><button onClick={handleCreateSection} className="ml-2 bg-gold p-2 rounded">Add</button><button onClick={()=>setIsCreatingSection(false)} className="ml-2 text-white">X</button></div></div>}
+
+            <div className="my-4 flex justify-between">
+                <div className="flex gap-4"><button onClick={shuffleCards} className="flex items-center gap-2 text-gold hover:text-white"><Shuffle size={20}/> Shuffle</button></div>
+                <label className="bg-red-600 px-4 py-2 rounded text-white flex gap-2 items-center cursor-pointer"><Upload size={16}/> Upload<input type="file" hidden multiple accept="image/*" onChange={handleUpload}/></label>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{filCards.map(c=>{ const lp=useLongPress(()=>setDeleteId(c.id)); return <div key={c.id} {...lp} onClick={()=>setSelectedCard(c)} className="aspect-[3/4] bg-gray-800 rounded border border-gold/30 flex items-center justify-center overflow-hidden"><Maximize2 className="text-gold"/></div> })}</div>
+            
+            {/* Modals */}
+            {sectionMenu && !moveTarget && <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center flex flex-col gap-4"><h3 className="text-gold text-xl">{sectionMenu.title}</h3>{isRenamingSection ? (<div className="space-y-4"><input autoFocus className="w-full p-2 bg-black border border-gold rounded text-white" value={renameText} onChange={(e) => setRenameText(e.target.value)} /><div className="flex justify-center gap-2"><button onClick={() => setIsRenamingSection(false)} className="px-3 py-2 rounded bg-gray-700 text-white text-sm">Cancel</button><button onClick={handleRenameSection} className="px-3 py-2 rounded bg-gold text-black text-sm font-bold">Save</button></div></div>) : (<><button onClick={()=>setIsRenamingSection(true)} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-white w-full"><Edit2 size={18} /> Rename</button><button onClick={()=>setMoveTarget(true)} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 justify-center"><Grid/> Move to Category</button><button onClick={handleDeleteSection} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2 justify-center"><Trash2/> Delete Section</button><button onClick={()=>setSectionMenu(null)} className="text-gray-400">Cancel</button></>)}</div></div>}
+            {moveTarget && <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded w-64 max-h-[80vh] overflow-y-auto"><h3 className="text-white mb-4">Move to...</h3><button onClick={()=>handleMoveSection(null)} className="w-full text-left p-2 border-b border-gray-600 text-gray-300">Unsorted</button>{headers.map(h=><button key={h.id} onClick={()=>handleMoveSection(h.id)} className="w-full text-left p-2 border-b border-gray-600 text-gold">{h.title}</button>)}<button onClick={()=>setMoveTarget(null)} className="mt-4 text-gray-400 w-full">Cancel</button></div></div>}
+            {headerMenu && <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center"><p className="text-white mb-4">Delete Category "{headerMenu.title}"?</p><button onClick={handleDeleteHeader} className="bg-red-600 text-white px-4 py-2 rounded">Delete</button><button onClick={()=>setHeaderMenu(null)} className="ml-4 text-gray-400">Cancel</button></div></div>}
+            
+            {selectedCard && (<div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"><div className="relative w-full max-w-sm h-[75vh] flex flex-col border-4 border-gold rounded-xl overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)] bg-black animate-fadeIn"><button onClick={() => setSelectedCard(null)} className="absolute top-2 right-2 z-30 bg-black/50 text-white p-2 rounded-full hover:bg-red-600 transition"><X size={24} /></button><div className="h-[80%] relative border-b-4 border-gold bg-black flex items-center justify-center">{showHistory ? (<HistoryList cardId={selectedCard.id} onClose={() => setShowHistory(false)}/>) : (<RevealCard id={selectedCard.id} image={selectedCard.filepath} onRevealComplete={() => handleReveal(selectedCard.id)} />)}</div><div className="h-[20%] bg-gradient-to-t from-black to-gray-900 flex flex-col items-center justify-center p-4"><button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-gold text-xl bg-white/5 px-6 py-2 rounded-full border border-gold/30 hover:bg-gold/20 transition active:scale-95"><Heart size={20} className={showHistory ? "text-gray-400" : "fill-lipstick text-lipstick"}/><span>{showHistory ? "Back to Card" : `Revealed ${cards.find(c => c.id === selectedCard.id)?.scratched_count || 0} times`}</span></button></div></div></div>)}
+            {deleteId && <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center"><p className="text-white mb-4">Delete?</p><button onClick={handleDeleteCard} className="bg-red-600 text-white px-4 py-2 rounded">Yes</button><button onClick={()=>setDeleteId(null)} className="ml-4 text-gray-400">No</button></div></div>}
+        </div>
+    );
 };
 
 export default function App() {

@@ -1,6 +1,6 @@
 /**
  * Privy Backend - Node.js
- * STABLE VERSION + Calendar & Tracker
+ * STABLE VERSION - No Export Feature
  */
 
 const express = require('express');
@@ -11,6 +11,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
+const { exec } = require('child_process'); // Kept for PDF extraction
 
 // --- Global Error Handlers ---
 process.on('uncaughtException', (err) => {
@@ -50,17 +51,22 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, name TEXT, age INTEGER, gender TEXT, avatar TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
     
+    // Cards & Structure
     db.run(`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, scratched_count INTEGER DEFAULT 0, section_id INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, header_id INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS header_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS card_history (id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(card_id) REFERENCES cards(id))`);
     
+    // Books
     db.run(`CREATE TABLE IF NOT EXISTS books (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, filepath TEXT)`);
     
+    // Dice
     db.run(`CREATE TABLE IF NOT EXISTS dice_options (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, text TEXT, role TEXT DEFAULT 'wife')`);
     
+    // Locations
     db.run(`CREATE TABLE IF NOT EXISTS location_unlocks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, unlocked_at DATETIME, count INTEGER DEFAULT 0)`);
     
+    // Fantasies
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, pulled_at DATETIME)`);
 
     // Galleries
@@ -69,10 +75,10 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
 
-    // Calendar Notes (NEW)
-    db.run(`CREATE TABLE IF NOT EXISTS calendar_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+    // Calendar
+    db.run(`CREATE TABLE IF NOT EXISTS calendar_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, text TEXT)`);
 
-    // Safe Migrations
+    // Migrations
     const runMigration = (sql) => {
         try {
             db.run(sql, () => {});
@@ -83,6 +89,30 @@ db.serialize(() => {
     runMigration(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`);
     runMigration(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`);
     runMigration(`ALTER TABLE sections ADD COLUMN header_id INTEGER`);
+
+    // Seed Data
+    db.get("SELECT count(*) as count FROM dice_options", (err, row) => {
+        if (!err && row && row.count === 0) {
+            const defaults = [
+                ['act', 'Kiss', 'wife'], ['act', 'Lick', 'wife'],
+                ['location', 'Neck', 'wife'], ['location', 'Ears', 'wife'],
+                ['act', 'Kiss', 'husband'], ['act', 'Lick', 'husband'],
+                ['location', 'Neck', 'husband'], ['location', 'Ears', 'husband']
+            ];
+            const stmt = db.prepare("INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)");
+            defaults.forEach(d => stmt.run(d));
+            stmt.finalize();
+        }
+    });
+
+    db.get("SELECT count(*) as count FROM location_unlocks", (err, row) => {
+        if (!err && row && row.count === 0) {
+            const defaults = ['Kitchen', 'Shower', 'Car', 'Balcony', 'Hotel'];
+            const stmt = db.prepare("INSERT INTO location_unlocks (name) VALUES (?)");
+            defaults.forEach(d => stmt.run(d));
+            stmt.finalize();
+        }
+    });
 });
 
 // --- Ntfy Helper ---
@@ -112,6 +142,7 @@ const sendNtfy = (itemId, type = 'card') => {
                     const stats = fs.statSync(absPath);
                     const fileBuffer = fs.readFileSync(absPath);
                     const filename = `${type}_${itemId}_${Date.now()}.jpg`;
+
                     const u = new URL(`${settings.ntfy_url.replace(/\/$/, '')}/${settings.ntfy_topic}`);
                     u.searchParams.append('message', message);
                     u.searchParams.append('title', title);
@@ -130,28 +161,26 @@ const sendNtfy = (itemId, type = 'card') => {
     });
 };
 
-const upload = multer({
-    storage: multer.diskStorage({
-        destination: (req, file, cb) => {
-            let folder = 'cards';
-            if (req.path.includes('book')) folder = 'books';
-            else if (req.path.includes('toy')) folder = 'toys';
-            else if (req.path.includes('lingerie')) folder = 'lingerie';
-            else if (req.path.includes('condom')) folder = 'condoms';
-            else if (req.path.includes('lube')) folder = 'lubes';
-            const dir = path.join(DATA_DIR, 'uploads', folder);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            cb(null, dir);
-        },
-        filename: (req, file, cb) => {
-            cb(null, Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9.]/g, '_'));
-        }
-    })
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        let folder = 'cards';
+        if (req.path.includes('book')) folder = 'books';
+        else if (req.path.includes('toy')) folder = 'toys';
+        else if (req.path.includes('lingerie')) folder = 'lingerie';
+        else if (req.path.includes('condom')) folder = 'condoms';
+        else if (req.path.includes('lube')) folder = 'lubes';
+        
+        const dir = path.join(DATA_DIR, 'uploads', folder);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9.]/g, '_'));
+    }
 });
-
+const upload = multer({ storage });
 const auth = (req, res, next) => {
     let token = req.headers['authorization'];
-    if (!token && req.query.token) token = 'Bearer ' + req.query.token;
     if (!token) return res.status(403).json({ error: 'No token' });
     try {
         const t = token.startsWith('Bearer ') ? token.split(' ')[1] : token;
@@ -162,6 +191,7 @@ const auth = (req, res, next) => {
 
 // --- ROUTES ---
 
+// Auth
 app.post('/api/register', (req, res) => {
     const hash = bcrypt.hashSync(req.body.password, 8);
     db.run(`INSERT INTO users (username, password) VALUES (?,?)`, [req.body.username, hash], function(err) {
@@ -169,14 +199,12 @@ app.post('/api/register', (req, res) => {
         res.json({success:true, id:this.lastID});
     });
 });
-
 app.post('/api/login', (req, res) => {
     db.get(`SELECT * FROM users WHERE username = ?`, [req.body.username], (err, user) => {
         if (!user || !bcrypt.compareSync(req.body.password, user.password)) return res.status(400).json({ error: 'Invalid credentials' });
         res.json({ token: jwt.sign({ id: user.id, name: user.name }, SECRET_KEY), user });
     });
 });
-
 app.put('/api/user', auth, (req, res) => {
     let sql = `UPDATE users SET name = ? WHERE id = ?`, params = [req.body.name, req.user.id];
     if(req.body.password) { 
@@ -202,8 +230,14 @@ app.put('/api/settings', auth, (req, res) => {
         res.json({success:true});
     });
 });
+app.post('/api/settings/test', auth, (req, res) => {
+    const { ntfy_url, ntfy_topic } = req.body;
+    if(!ntfy_url) return res.status(400).json({error:'No Config'});
+    const u = new URL(`${ntfy_url.replace(/\/$/,'')}/${ntfy_topic}`);
+    fetch(u.toString(), {method:'POST', body:'Test'}).then(r=>res.json({success:r.ok})).catch(e=>res.status(500).json({error:e.message}));
+});
 
-// Calendar Notes (NEW)
+// Calendar
 app.get('/api/calendar', auth, (req, res) => {
     db.all('SELECT * FROM calendar_notes', [], (err, rows) => res.json(rows || []));
 });
@@ -217,7 +251,6 @@ app.delete('/api/calendar/:id', auth, (req, res) => {
     db.run('DELETE FROM calendar_notes WHERE id=?', [req.params.id], (err) => res.json({success: true}));
 });
 
-
 // Headers
 app.get('/api/headers', auth, (req, res) => {
     db.all(`SELECT * FROM header_sections`, [], (err, rows) => res.json(rows || []));
@@ -230,6 +263,9 @@ app.delete('/api/headers/:id', auth, (req, res) => {
         db.run(`UPDATE sections SET header_id = NULL WHERE header_id = ?`, [req.params.id]);
         db.run(`DELETE FROM header_sections WHERE id = ?`, [req.params.id], () => res.json({success:true}));
     });
+});
+app.put('/api/headers/:id', auth, (req, res) => {
+    db.run(`UPDATE header_sections SET title = ? WHERE id = ?`, [req.body.title, req.params.id], (err)=>{ res.json({success:true}); });
 });
 
 // Sections
@@ -366,13 +402,11 @@ app.get('/api/fantasies/history', auth, (req, res) => {
 app.post('/api/fantasies', auth, (req, res) => {
     db.run(`INSERT INTO fantasies (text) VALUES (?)`, [req.body.text], function(){ res.json({success:true}); });
 });
-app.post('/api/fantasies/pull', auth, (req, res) => {
-    db.get(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY RANDOM() LIMIT 1`, [], (err, row) => {
-        if(!row) return res.json({empty:true});
-        db.run(`UPDATE fantasies SET pulled_at=CURRENT_TIMESTAMP WHERE id=?`, [row.id]);
-        res.json(row);
-    });
-});
+app.post('/api/fantasies/pull', auth, (req, res) => db.get(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY RANDOM() LIMIT 1`, [], (err, row) => {
+    if(!row) return res.json({empty:true});
+    db.run(`UPDATE fantasies SET pulled_at=CURRENT_TIMESTAMP WHERE id=?`, [row.id]);
+    res.json(row);
+}));
 app.post('/api/fantasies/:id/return', auth, (req, res) => {
     db.run(`UPDATE fantasies SET pulled_at=NULL WHERE id=?`, [req.params.id], ()=>res.json({success:true}));
 });
@@ -437,6 +471,8 @@ app.get('/api/lubes', auth, handleGalleryGet('lubes'));
 app.post('/api/lubes', auth, upload.single('file'), handleGalleryPost('lubes', 'lubes'));
 app.delete('/api/lubes/:id', auth, handleGalleryDelete('lubes'));
 app.post('/api/lubes/:id/draw', auth, handleGalleryDraw('lubes', 'lubes'));
+
+// Export Removed per request
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../client/dist/index.html')));
 app.listen(PORT, () => console.log(`🚀 Port ${PORT}`));
