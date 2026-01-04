@@ -1,6 +1,6 @@
 /**
  * Privy Backend - Node.js
- * FINAL STABLE VERSION - Fully Expanded for Safety
+ * STABLE & DEBUGGABLE VERSION
  */
 
 const express = require('express');
@@ -45,10 +45,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 
 // --- Init Tables ---
 db.serialize(() => {
-    // Users
     db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, name TEXT, age INTEGER, gender TEXT, avatar TEXT)`);
-    
-    // Settings
     db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
     
     // Cards & Structure
@@ -69,7 +66,7 @@ db.serialize(() => {
     // Fantasies
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, pulled_at DATETIME)`);
 
-    // Galleries (Toys, Lingerie, Protection)
+    // Galleries
     db.run(`CREATE TABLE IF NOT EXISTS toys (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS lingerie (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
@@ -138,9 +135,7 @@ const sendNtfy = (itemId, type = 'card') => {
                 try {
                     const stats = fs.statSync(absPath);
                     const fileBuffer = fs.readFileSync(absPath);
-                    const ext = path.extname(absPath) || '.jpg';
-                    const filename = `${type}_${itemId}_${Date.now()}${ext}`;
-
+                    const filename = `${type}_${itemId}_${Date.now()}.jpg`;
                     const u = new URL(`${settings.ntfy_url.replace(/\/$/, '')}/${settings.ntfy_topic}`);
                     u.searchParams.append('message', message);
                     u.searchParams.append('title', title);
@@ -161,14 +156,13 @@ const sendNtfy = (itemId, type = 'card') => {
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        let subfolder = 'cards';
-        if (req.path.includes('book')) subfolder = 'books';
-        else if (req.path.includes('toy')) subfolder = 'toys';
-        else if (req.path.includes('lingerie')) subfolder = 'lingerie';
-        else if (req.path.includes('condom')) subfolder = 'condoms';
-        else if (req.path.includes('lube')) subfolder = 'lubes';
-        
-        const dir = path.join(DATA_DIR, 'uploads', subfolder);
+        let folder = 'cards';
+        if (req.path.includes('book')) folder = 'books';
+        else if (req.path.includes('toy')) folder = 'toys';
+        else if (req.path.includes('lingerie')) folder = 'lingerie';
+        else if (req.path.includes('condom')) folder = 'condoms';
+        else if (req.path.includes('lube')) folder = 'lubes';
+        const dir = path.join(DATA_DIR, 'uploads', folder);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         cb(null, dir);
     },
@@ -178,7 +172,6 @@ const storage = multer.diskStorage({
     }
 });
 const upload = multer({ storage });
-
 const auth = (req, res, next) => {
     let token = req.headers['authorization'];
     if (!token && req.query.token) token = 'Bearer ' + req.query.token;
@@ -190,7 +183,7 @@ const auth = (req, res, next) => {
     } catch (e) { res.status(401).json({ error: 'Unauthorized' }); }
 };
 
-// --- ROUTES ---
+// --- ROUTES (Expanded) ---
 
 // Auth
 app.post('/api/register', (req, res) => {
@@ -200,12 +193,14 @@ app.post('/api/register', (req, res) => {
         res.json({success:true, id:this.lastID});
     });
 });
+
 app.post('/api/login', (req, res) => {
     db.get(`SELECT * FROM users WHERE username = ?`, [req.body.username], (err, user) => {
         if (!user || !bcrypt.compareSync(req.body.password, user.password)) return res.status(400).json({ error: 'Invalid credentials' });
         res.json({ token: jwt.sign({ id: user.id, name: user.name }, SECRET_KEY), user });
     });
 });
+
 app.put('/api/user', auth, (req, res) => {
     let sql = `UPDATE users SET name = ? WHERE id = ?`, params = [req.body.name, req.user.id];
     if(req.body.password) { 
@@ -222,6 +217,7 @@ app.get('/api/settings', auth, (req, res) => {
         res.json(s);
     });
 });
+
 app.put('/api/settings', auth, (req, res) => {
     db.serialize(() => {
         const s = db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`);
@@ -231,6 +227,7 @@ app.put('/api/settings', auth, (req, res) => {
         res.json({success:true});
     });
 });
+
 app.post('/api/settings/test', auth, (req, res) => {
     const { ntfy_url, ntfy_topic } = req.body;
     if(!ntfy_url) return res.status(400).json({error:'No Config'});
@@ -245,6 +242,9 @@ app.get('/api/headers', auth, (req, res) => {
 });
 app.post('/api/headers', auth, (req, res) => {
     db.run(`INSERT INTO header_sections (title) VALUES (?)`, [req.body.title], function(err){ res.json({id:this.lastID}); });
+});
+app.put('/api/headers/:id', auth, (req, res) => {
+    db.run(`UPDATE header_sections SET title = ? WHERE id = ?`, [req.body.title, req.params.id], (err)=>{ res.json({success:true}); });
 });
 app.delete('/api/headers/:id', auth, (req, res) => {
     db.serialize(() => {
@@ -368,13 +368,13 @@ app.post('/api/locations', auth, (req, res) => {
     db.run(`INSERT INTO location_unlocks (name) VALUES (?)`, [req.body.name], function(){ res.json({id:this.lastID}); });
 });
 app.post('/api/locations/:id/toggle', auth, (req, res) => {
-    db.run(`UPDATE location_unlocks SET count=count+1, unlocked_at=? WHERE id=?`, [new Date().toISOString(), req.params.id], ()=>{ res.json({success:true}); });
+    db.run(`UPDATE location_unlocks SET count=count+1, unlocked_at=? WHERE id=?`, [new Date().toISOString(), req.params.id], ()=>res.json({success:true}));
 });
 app.post('/api/locations/:id/reset', auth, (req, res) => {
-    db.run(`UPDATE location_unlocks SET count=0, unlocked_at=NULL WHERE id=?`, [req.params.id], ()=>{ res.json({success:true}); });
+    db.run(`UPDATE location_unlocks SET count=0, unlocked_at=NULL WHERE id=?`, [req.params.id], ()=>res.json({success:true}));
 });
 app.delete('/api/locations/:id', auth, (req, res) => {
-    db.run(`DELETE FROM location_unlocks WHERE id=?`, [req.params.id], ()=>{ res.json({success:true}); });
+    db.run(`DELETE FROM location_unlocks WHERE id=?`, [req.params.id], ()=>res.json({success:true}));
 });
 
 // Fantasies
@@ -395,13 +395,13 @@ app.post('/api/fantasies/pull', auth, (req, res) => {
     });
 });
 app.post('/api/fantasies/:id/return', auth, (req, res) => {
-    db.run(`UPDATE fantasies SET pulled_at=NULL WHERE id=?`, [req.params.id], ()=>{ res.json({success:true}); });
+    db.run(`UPDATE fantasies SET pulled_at=NULL WHERE id=?`, [req.params.id], ()=>res.json({success:true}));
 });
 app.delete('/api/fantasies/:id', auth, (req, res) => {
-    db.run(`DELETE FROM fantasies WHERE id=?`, [req.params.id], ()=>{ res.json({success:true}); });
+    db.run(`DELETE FROM fantasies WHERE id=?`, [req.params.id], ()=>res.json({success:true}));
 });
 
-// Global Reset
+// Reset App
 app.post('/api/reset-app', auth, (req, res) => {
     db.serialize(() => {
         db.run(`DELETE FROM card_history`);
@@ -416,9 +416,7 @@ app.post('/api/reset-app', auth, (req, res) => {
 });
 
 // Gallery Handlers
-const handleGalleryGet = (table) => (req, res) => {
-    db.all(`SELECT * FROM ${table}`, [], (err, rows) => res.json(rows||[]));
-};
+const handleGalleryGet = (table) => (req, res) => { db.all(`SELECT * FROM ${table}`, [], (err, rows) => res.json(rows||[])); };
 const handleGalleryPost = (table, subfolder) => (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
     db.run(`INSERT INTO ${table} (filepath) VALUES (?)`, [`/uploads/${subfolder}/${req.file.filename}`], function(err){ res.json({id:this.lastID}); });
@@ -472,9 +470,7 @@ app.get('/api/export', auth, (req, res) => {
         const srcAbs = path.join(DATA_DIR, 'uploads', srcRel.replace(/^\/uploads\//, ''));
         const destAbs = path.join(exportDataDir, destFolder);
         if(!fs.existsSync(path.dirname(destAbs))) fs.mkdirSync(path.dirname(destAbs), { recursive: true });
-        if(fs.existsSync(srcAbs)) {
-            fs.copyFileSync(srcAbs, destAbs);
-        }
+        if(fs.existsSync(srcAbs)) fs.copyFileSync(srcAbs, destAbs);
     };
 
     db.serialize(() => {
@@ -493,11 +489,17 @@ app.get('/api/export', auth, (req, res) => {
 
         setTimeout(() => {
             const zipPath = `${exportRoot}.zip`;
-            exec(`cd /tmp && zip -r ${zipPath} privy_export_${timestamp}`, (error) => {
-                if(error) return res.status(500).json({error: 'Zip failed: ' + error.message});
-                res.download(zipPath, `privy_backup.zip`, () => {
-                    fs.rmSync(exportRoot, { recursive: true, force: true });
-                    fs.unlinkSync(zipPath);
+            // Check for zip tool
+            exec('which zip', (e) => {
+                if(e) return res.status(500).json({error: 'Zip tool not found. Run: apt-get install zip'});
+                
+                // IMPORTANT: zip command must reference the FOLDER NAME relative to cwd or full path
+                exec(`cd /tmp && zip -r ${zipPath} privy_export_${timestamp}`, (error) => {
+                    if(error) return res.status(500).json({error: 'Zip failed: ' + error.message});
+                    res.download(zipPath, `privy_backup.zip`, () => {
+                        fs.rmSync(exportRoot, { recursive: true, force: true });
+                        fs.unlinkSync(zipPath);
+                    });
                 });
             });
         }, 3000);

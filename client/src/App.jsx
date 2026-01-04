@@ -247,8 +247,7 @@ const Gallery = ({ title, endpoint, icon }) => {
 
     const fetchItems = useCallback(() => {
         safeFetch(`${API_URL}/${endpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
-            .then(data => { if(Array.isArray(data)) setItems(data); })
-            .catch(() => setItems([]));
+            .then(data => { if(Array.isArray(data)) setItems(data); });
     }, [endpoint]);
 
     useEffect(() => { fetchItems(); }, [fetchItems]);
@@ -308,13 +307,10 @@ const Gallery = ({ title, endpoint, icon }) => {
                 <button onClick={() => setIsEditing(!isEditing)} className={`flex items-center gap-2 px-4 py-2 rounded-full border transition ${isEditing ? 'bg-gold text-black border-gold' : 'bg-transparent text-gray-400 border-gray-700'}`}><Edit2 size={16}/> {isEditing ? 'Done' : 'Manage'}</button>
             </div>
             {isEditing && (
-                <>
-                <div className="w-full mb-2 text-center text-xs text-gray-500">Long press an item to delete</div>
                 <div className="w-full grid grid-cols-3 gap-2 animate-fadeIn">
                     <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40"><Plus className="text-burgundy"/><span className="text-xs text-burgundy mt-1">Add</span><input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} /></label>
                     {items.map(item => (<GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />))}
                 </div>
-                </>
             )}
             {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Item?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
         </div>
@@ -526,7 +522,20 @@ const Layout = ({ children, user, logout }) => {
   const [resetInput, setResetInput] = useState("");
   const handleReload = async () => { if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (const registration of registrations) await registration.unregister(); } window.location.reload(true); };
   const handleResetSubmit = async () => { if (resetInput !== 'RESET') { alert("Please type 'RESET' exactly."); return; } if (resetStep === 1) { setResetStep(2); setResetInput(""); } else { await safeFetch(`${API_URL}/reset-app`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); alert("App has been reset."); setShowResetModal(false); setResetStep(1); setResetInput(""); handleReload(); } };
-  const handleExport = async () => { const link = document.createElement('a'); link.href = `${API_URL}/export?token=${localStorage.getItem('token')}`; link.setAttribute('download', 'privy_backup.zip'); document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+  const handleExport = async () => { 
+      try {
+        const res = await fetch(`${API_URL}/export?token=${localStorage.getItem('token')}`);
+        if(!res.ok) throw new Error("Server Error");
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `privy_backup_${new Date().toISOString().split('T')[0]}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch(e) { alert("Export Failed. Make sure 'zip' is installed on server."); }
+  };
   
   return (
     <div className="fixed inset-0 w-full h-full bg-black text-white font-caveat selection:bg-lipstick flex flex-col overflow-hidden">
