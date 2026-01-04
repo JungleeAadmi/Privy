@@ -69,7 +69,7 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
 
-    // Migrations
+    // Safe Migrations
     const runMigration = (sql) => {
         try {
             db.run(sql, () => {});
@@ -91,6 +91,15 @@ db.serialize(() => {
                 ['location', 'Neck', 'husband'], ['location', 'Ears', 'husband']
             ];
             const stmt = db.prepare("INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)");
+            defaults.forEach(d => stmt.run(d));
+            stmt.finalize();
+        }
+    });
+
+    db.get("SELECT count(*) as count FROM location_unlocks", (err, row) => {
+        if (!err && row && row.count === 0) {
+            const defaults = ['Kitchen', 'Shower', 'Car', 'Balcony', 'Hotel'];
+            const stmt = db.prepare("INSERT INTO location_unlocks (name) VALUES (?)");
             defaults.forEach(d => stmt.run(d));
             stmt.finalize();
         }
@@ -123,7 +132,8 @@ const sendNtfy = (itemId, type = 'card') => {
                 try {
                     const stats = fs.statSync(absPath);
                     const fileBuffer = fs.readFileSync(absPath);
-                    const filename = `${type}_${itemId}_${Date.now()}.jpg`;
+                    const ext = path.extname(absPath) || '.jpg';
+                    const filename = `${type}_${itemId}_${Date.now()}${ext}`;
 
                     const u = new URL(`${settings.ntfy_url.replace(/\/$/, '')}/${settings.ntfy_topic}`);
                     u.searchParams.append('message', message);
@@ -218,6 +228,7 @@ app.post('/api/settings/test', auth, (req, res) => {
     const { ntfy_url, ntfy_topic } = req.body;
     if(!ntfy_url) return res.status(400).json({error:'No Config'});
     const u = new URL(`${ntfy_url.replace(/\/$/,'')}/${ntfy_topic}`);
+    if(typeof fetch !== 'function') return res.status(500).json({error:'Fetch missing'});
     fetch(u.toString(), {method:'POST', body:'Test'}).then(r=>{if(r.ok)res.json({success:true});else res.status(500).json({error:r.status})}).catch(e=>res.status(500).json({error:e.message}));
 });
 
@@ -233,6 +244,9 @@ app.delete('/api/headers/:id', auth, (req, res) => {
         db.run(`UPDATE sections SET header_id = NULL WHERE header_id = ?`, [req.params.id]);
         db.run(`DELETE FROM header_sections WHERE id = ?`, [req.params.id], () => res.json({success:true}));
     });
+});
+app.put('/api/headers/:id', auth, (req, res) => {
+    db.run(`UPDATE header_sections SET title = ? WHERE id = ?`, [req.body.title, req.params.id], (err)=>{ res.json({success:true}); });
 });
 
 // Sections
@@ -475,9 +489,11 @@ app.get('/api/export', auth, (req, res) => {
 
         setTimeout(() => {
             const zipPath = `${exportRoot}.zip`;
+            // Check for zip tool
             exec('which zip', (e) => {
                 if(e) return res.status(500).json({error: 'Zip tool not found. Run: apt-get install zip'});
                 
+                // IMPORTANT: zip command must reference the FOLDER NAME relative to cwd or full path
                 exec(`cd /tmp && zip -r ${path.basename(zipPath)} ${path.basename(exportRoot)}`, (error) => {
                     if(error) return res.status(500).json({error: 'Zip failed: ' + error.message});
                     res.download(zipPath, `privy_backup.zip`, () => {
