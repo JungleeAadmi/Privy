@@ -247,8 +247,7 @@ const Gallery = ({ title, endpoint, icon }) => {
 
     const fetchItems = useCallback(() => {
         safeFetch(`${API_URL}/${endpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
-            .then(data => { if(Array.isArray(data)) setItems(data); })
-            .catch(() => setItems([]));
+            .then(data => { if(Array.isArray(data)) setItems(data); });
     }, [endpoint]);
 
     useEffect(() => { fetchItems(); }, [fetchItems]);

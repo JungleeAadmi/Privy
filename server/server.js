@@ -1,6 +1,6 @@
 /**
  * Privy Backend - Node.js
- * FINAL STABLE VERSION - Syntax Fixed
+ * FINAL STABLE VERSION - FULLY EXPANDED
  */
 
 const express = require('express');
@@ -39,35 +39,31 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 const db = new sqlite3.Database(DB_PATH, (err) => {
-    if (err) console.error('DB Error:', err.message);
-    else console.log('✅ Connected to SQLite database.');
+    if (err) {
+        console.error('DB Error:', err.message);
+    } else {
+        console.log('✅ Connected to SQLite database.');
+    }
 });
 
 // --- Init Tables ---
 db.serialize(() => {
-    // Core
     db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, name TEXT, age INTEGER, gender TEXT, avatar TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
     
-    // Cards & Structure
     db.run(`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, scratched_count INTEGER DEFAULT 0, section_id INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, header_id INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS header_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS card_history (id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(card_id) REFERENCES cards(id))`);
     
-    // Books
     db.run(`CREATE TABLE IF NOT EXISTS books (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, filepath TEXT)`);
     
-    // Dice
     db.run(`CREATE TABLE IF NOT EXISTS dice_options (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, text TEXT, role TEXT DEFAULT 'wife')`);
     
-    // Locations
     db.run(`CREATE TABLE IF NOT EXISTS location_unlocks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, unlocked_at DATETIME, count INTEGER DEFAULT 0)`);
     
-    // Fantasies
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, pulled_at DATETIME)`);
 
-    // Galleries (Toys, Lingerie, Protection)
     db.run(`CREATE TABLE IF NOT EXISTS toys (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS lingerie (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
@@ -95,15 +91,6 @@ db.serialize(() => {
                 ['location', 'Neck', 'husband'], ['location', 'Ears', 'husband']
             ];
             const stmt = db.prepare("INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)");
-            defaults.forEach(d => stmt.run(d));
-            stmt.finalize();
-        }
-    });
-
-    db.get("SELECT count(*) as count FROM location_unlocks", (err, row) => {
-        if (!err && row && row.count === 0) {
-            const defaults = ['Kitchen', 'Shower', 'Car', 'Balcony', 'Hotel'];
-            const stmt = db.prepare("INSERT INTO location_unlocks (name) VALUES (?)");
             defaults.forEach(d => stmt.run(d));
             stmt.finalize();
         }
@@ -137,6 +124,7 @@ const sendNtfy = (itemId, type = 'card') => {
                     const stats = fs.statSync(absPath);
                     const fileBuffer = fs.readFileSync(absPath);
                     const filename = `${type}_${itemId}_${Date.now()}.jpg`;
+
                     const u = new URL(`${settings.ntfy_url.replace(/\/$/, '')}/${settings.ntfy_topic}`);
                     u.searchParams.append('message', message);
                     u.searchParams.append('title', title);
@@ -147,7 +135,7 @@ const sendNtfy = (itemId, type = 'card') => {
                             method: 'POST',
                             body: fileBuffer,
                             headers: { 'Content-Length': stats.size }
-                        }).catch(() => {});
+                        }).catch(err => console.error("Ntfy Error:", err.message));
                     }
                 } catch (e) { console.error("Ntfy fail", e); }
             }
@@ -163,6 +151,7 @@ const storage = multer.diskStorage({
         else if (req.path.includes('lingerie')) folder = 'lingerie';
         else if (req.path.includes('condom')) folder = 'condoms';
         else if (req.path.includes('lube')) folder = 'lubes';
+        
         const dir = path.join(DATA_DIR, 'uploads', folder);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         cb(null, dir);
@@ -172,6 +161,7 @@ const storage = multer.diskStorage({
     }
 });
 const upload = multer({ storage });
+
 const auth = (req, res, next) => {
     let token = req.headers['authorization'];
     if (!token && req.query.token) token = 'Bearer ' + req.query.token;
@@ -228,7 +218,6 @@ app.post('/api/settings/test', auth, (req, res) => {
     const { ntfy_url, ntfy_topic } = req.body;
     if(!ntfy_url) return res.status(400).json({error:'No Config'});
     const u = new URL(`${ntfy_url.replace(/\/$/,'')}/${ntfy_topic}`);
-    if(typeof fetch !== 'function') return res.status(500).json({error:'Fetch missing'});
     fetch(u.toString(), {method:'POST', body:'Test'}).then(r=>{if(r.ok)res.json({success:true});else res.status(500).json({error:r.status})}).catch(e=>res.status(500).json({error:e.message}));
 });
 
@@ -456,15 +445,17 @@ app.post('/api/lubes/:id/draw', auth, handleGalleryDraw('lubes', 'lubes'));
 app.get('/api/export', auth, (req, res) => {
     const timestamp = Date.now();
     const exportRoot = path.join('/tmp', `privy_export_${timestamp}`);
-    fs.mkdirSync(path.join(exportRoot, 'data'), { recursive: true });
+    const exportDataDir = path.join(exportRoot, 'data');
+    
+    fs.mkdirSync(exportDataDir, { recursive: true });
 
     const copyFile = (srcRel, destFolder) => {
         if(!srcRel) return;
         const srcAbs = path.join(DATA_DIR, 'uploads', srcRel.replace(/^\/uploads\//, ''));
-        const destAbs = path.join(exportRoot, 'data', destFolder);
+        const destAbs = path.join(exportDataDir, destFolder);
         if(!fs.existsSync(path.dirname(destAbs))) fs.mkdirSync(path.dirname(destAbs), { recursive: true });
         if(fs.existsSync(srcAbs)) {
-            fs.copyFileSync(srcAbs, path.join(destAbs, path.basename(srcAbs)));
+            fs.copyFileSync(srcAbs, destAbs);
         }
     };
 
@@ -475,19 +466,12 @@ app.get('/api/export', auth, (req, res) => {
                 LEFT JOIN header_sections h ON s.header_id = h.id`, [], (err, rows) => { 
             if(rows) rows.forEach(r => {
                 const folder = r.header ? `${r.header}/${r.section}` : (r.section || 'Unsorted');
-                copyFile(r.filepath, `Cards/${folder}`);
+                copyFile(r.filepath, `Cards/${folder}/${path.basename(r.filepath)}`);
             });
         });
         
-        db.all(`SELECT filepath FROM books`, [], (err, rows) => { 
-            if(rows) rows.forEach(r => copyFile(r.filepath, 'Books')); 
-        });
-        
-        ['toys','lingerie','condoms','lubes'].forEach(t => {
-            db.all(`SELECT filepath FROM ${t}`, [], (err, rows) => { 
-                if(rows) rows.forEach(r => copyFile(r.filepath, t)); 
-            });
-        });
+        db.all(`SELECT filepath FROM books`, [], (err, rows) => { if(rows) rows.forEach(r => copyFile(r.filepath, `Books/${path.basename(r.filepath)}`)); });
+        ['toys','lingerie','condoms','lubes'].forEach(t => db.all(`SELECT filepath FROM ${t}`, [], (err, rows) => { if(rows) rows.forEach(r => copyFile(r.filepath, `${t}/${path.basename(r.filepath)}`)); }));
 
         setTimeout(() => {
             const zipPath = `${exportRoot}.zip`;
