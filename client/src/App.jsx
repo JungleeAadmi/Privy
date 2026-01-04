@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar as CalIcon, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar as CalIcon, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, Download, Grid, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -17,9 +17,9 @@ const safeFetch = async (url, options = {}) => {
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null };
   }
-  static getDerivedStateFromError(error) { return { hasError: true }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
   componentDidCatch(error, errorInfo) { console.error("Uncaught error:", error, errorInfo); }
   handleReset() {
     localStorage.clear();
@@ -32,6 +32,7 @@ class ErrorBoundary extends React.Component {
         <div className="min-h-screen w-full flex flex-col items-center justify-center bg-gray-900 text-gold p-6 text-center font-sans z-[9999] relative">
           <AlertTriangle size={64} className="mb-4 text-red-500" />
           <h1 className="text-4xl mb-4 font-bold">App Crashed</h1>
+          <p className="text-sm mb-8 text-gray-300 break-all">{this.state.error?.message || "Unknown Error"}</p>
           <button onClick={this.handleReset} className="px-6 py-3 bg-red-600 rounded-full text-white font-bold shadow-lg flex items-center gap-2"><RefreshCw size={20} /> Force Reset</button>
         </div>
       );
@@ -68,7 +69,7 @@ const RevealCard = ({ image, id, onRevealComplete }) => {
     if (tapTimer.current) clearTimeout(tapTimer.current);
     tapCount.current += 1;
     if (tapCount.current === 3) { if (!isRevealed) { setIsRevealed(true); onRevealComplete(id); } tapCount.current = 0; } 
-    else { timer.current = setTimeout(() => { tapCount.current = 0; }, 400); }
+    else { tapTimer.current = setTimeout(() => { tapCount.current = 0; }, 400); }
   };
   return (
     <div className="relative w-full h-full bg-black select-none overflow-hidden flex items-center justify-center" onClick={handleInteraction}>
@@ -82,13 +83,41 @@ const HistoryList = ({ cardId, onClose }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
+    let mounted = true;
     safeFetch(`${API_URL}/cards/${cardId}/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
-      .then(d => { if(Array.isArray(d)) setHistory(d); setLoading(false); });
+      .then(d => { if(mounted && Array.isArray(d)) setHistory(d); setLoading(false); });
+    return () => { mounted = false; };
   }, [cardId]);
   return (
     <div className="w-full h-full bg-gray-900 p-4 overflow-y-auto animate-fadeIn">
        <div className="flex justify-between items-center mb-4 border-b border-gold/30 pb-2"><h3 className="text-gold text-xl flex items-center gap-2"><Clock size={18}/> History</h3><button onClick={onClose} className="p-1 rounded-full hover:bg-white/10 text-gold"><X size={24}/></button></div>
        {loading ? <p className="text-gray-400">Loading...</p> : history.length === 0 ? <p className="text-gray-400 text-center mt-10">No history yet.</p> : (<ul className="space-y-3">{history.map((h, i) => (<li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm"><span className="text-white flex items-center gap-2"><Calendar size={14} className="text-burgundy"/> {new Date(h.timestamp).toLocaleDateString()}</span><span className="text-gold font-mono">{new Date(h.timestamp).toLocaleTimeString()}</span></li>))}</ul>)}
+    </div>
+  );
+};
+
+const PDFViewer = ({ url, title, bookId, onClose }) => {
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [progressText, setProgressText] = useState("");
+  const handleExtract = async () => {
+    if (!confirm("Extract all images from this book?")) return;
+    setIsExtracting(true); setProgressText("Initializing...");
+    const intervals = [setTimeout(() => setProgressText("Scanning..."), 2000), setTimeout(() => setProgressText("Extracting..."), 5000), setTimeout(() => setProgressText("Filtering..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
+    try {
+        const data = await safeFetch(`${API_URL}/books/${bookId}/extract`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+        intervals.forEach(clearTimeout);
+        if (data && data.success) { setProgressText("Done!"); setTimeout(() => { alert(`Success! ${data.message || "Images extracted."}`); setIsExtracting(false); setProgressText(""); }, 500); } 
+        else { alert(`Error: ${data?.error || "Unknown"}`); setIsExtracting(false); setProgressText(""); }
+    } catch { intervals.forEach(clearTimeout); alert("Extraction failed."); setIsExtracting(false); setProgressText(""); }
+  };
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col animate-fadeIn">
+      <div className="flex justify-between items-center px-4 pb-4 pt-12 bg-gray-900 border-b border-gold/20 safe-top">
+        <div className="flex flex-col max-w-[60%]"><h3 className="text-gold text-xl truncate">{title}</h3>{isExtracting && <span className="text-xs text-gold/80 animate-pulse">{progressText}</span>}</div>
+        <div className="flex gap-4 items-center"><button onClick={handleExtract} disabled={isExtracting} className={`p-2 rounded-full text-white shadow-lg transition ${isExtracting ? 'bg-gray-700 cursor-wait' : 'bg-blue-600 hover:bg-blue-500'}`}><RefreshCw className={isExtracting ? "animate-spin" : ""} size={24}/></button><button onClick={onClose} className="p-2 bg-burgundy rounded-full text-white hover:bg-lipstick shadow-lg"><X size={24}/></button></div>
+      </div>
+      {isExtracting && <div className="w-full h-1 bg-gray-800"><div className="animate-progress-indeterminate w-full h-full"></div></div>}
+      <div className="flex-1 w-full h-full bg-gray-800 flex items-center justify-center p-2 overflow-hidden relative"><object data={url} type="application/pdf" className="w-full h-full rounded-lg border border-gold/20"><div className="text-white text-center flex flex-col items-center justify-center h-full gap-4"><p>Preview not supported.</p><a href={url} download className="bg-gold text-black font-bold py-2 px-6 rounded-full hover:bg-yellow-500 transition">Download PDF</a></div></object></div>
     </div>
   );
 };
@@ -108,6 +137,7 @@ const CardItem = ({ card, onDeleteRequest, onClick }) => {
 
 const LocationItem = ({ loc, onToggle, onDeleteRequest }) => {
     const longPressProps = useLongPress(() => onDeleteRequest(loc), 800);
+    const unlockedDate = loc.unlocked_at ? new Date(loc.unlocked_at).toLocaleDateString() : '';
     return (
         <div {...longPressProps} onClick={() => onToggle(loc.id)} className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer select-none ${loc.count > 0 ? 'bg-burgundy/20 border-gold' : 'bg-gray-900 border-gray-700'}`}>
             <div className="flex items-center gap-4"><span className={`text-2xl font-caveat ${loc.count > 0 ? 'text-gold' : 'text-gray-400'}`}>{loc.name}</span>{loc.count > 0 && <span className="bg-gold text-black text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{loc.count}x</span>}</div>
@@ -196,6 +226,12 @@ const CalendarView = () => {
         load();
     };
 
+    const formatDateHeader = (dateStr) => {
+        if(!dateStr) return "Select a date";
+        const [y, m, d] = dateStr.split('-').map(Number);
+        return new Date(y, m-1, d).toDateString();
+    };
+
     return (
         <div className="p-4 flex flex-col items-center pb-24">
             <div className="flex justify-between w-full mb-4 text-gold text-xl font-bold">
@@ -207,7 +243,7 @@ const CalendarView = () => {
                 {['S','M','T','W','T','F','S'].map((d,i)=><div key={i} className="text-center text-gray-500 text-xs">{d}</div>)}
                 {days.map((d,i)=>{
                     if(!d) return <div key={i}></div>;
-                    const ds = d.toISOString().split('T')[0];
+                    const ds = `${y}-${String(m+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
                     const hasNote = notes.some(n=>n.date===ds);
                     return <div key={i} onClick={()=>setSel(ds)} className={`aspect-square flex flex-col items-center justify-center rounded-lg relative cursor-pointer ${sel===ds?'border border-gold bg-gray-700':'bg-gray-800'}`}>
                         <span className="text-white text-sm">{d.getDate()}</span>
@@ -216,7 +252,7 @@ const CalendarView = () => {
                 })}
             </div>
             <div className="w-full bg-gray-900 p-4 rounded-lg">
-                <h3 className="text-gold mb-2">{sel ? new Date(sel).toDateString() : "Select a date"}</h3>
+                <h3 className="text-gold mb-2">{formatDateHeader(sel)}</h3>
                 {sel && (
                     <>
                         <div className="flex gap-2 mb-4">
@@ -352,12 +388,13 @@ const Spin = () => {
         fetchData();
     }, []);
 
+    const filteredSections = sections; 
     const wheelGradient = `conic-gradient(${Array.from({length: 16}).map((_, i) => `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`).join(', ')})`;
     const handleSpin = () => { if (isSpinning) return; const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; }); if (pool.length === 0) { alert("No cards in this section!"); return; } setIsSpinning(true); setWinner(null); const winningIndex = Math.floor(Math.random() * 16); const winningCard = pool[Math.floor(Math.random() * pool.length)]; const segmentAngle = 360 / 16; const offset = (winningIndex * segmentAngle) + (segmentAngle / 2); const target = 360 - offset; let delta = target - (rotation % 360); if (delta < 0) delta += 360; const totalRotation = rotation + (5 * 360) + delta; setRotation(totalRotation); setTimeout(() => { setIsSpinning(false); setWinner(winningCard); safeFetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000); };
     return (
         <div className="flex flex-col items-center w-full min-h-full py-4">
             <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">
-                {sections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={null} />))}
+                {filteredSections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={null} />))}
             </div>
             <div className="relative w-80 h-80 shrink-0">
                 <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
