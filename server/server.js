@@ -1,3 +1,8 @@
+/**
+ * Privy Backend - Node.js
+ * STABLE & CRASH PROOF
+ */
+
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
@@ -6,9 +11,9 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
-const { exec } = require('child_process');
 
-process.on('uncaughtException', (e) => console.error('CRITICAL:', e));
+// --- Global Error Handlers ---
+process.on('uncaughtException', (err) => console.error('CRITICAL:', err));
 process.on('unhandledRejection', (r) => console.error('UNHANDLED:', r));
 
 const app = express();
@@ -23,8 +28,13 @@ app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads')));
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-const db = new sqlite3.Database(DB_PATH);
 
+const db = new sqlite3.Database(DB_PATH, (err) => {
+    if (err) console.error('DB Error:', err.message);
+    else console.log('✅ Connected to SQLite database.');
+});
+
+// --- Init Tables ---
 db.serialize(() => {
     const schemas = [
         `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, name TEXT, age INTEGER, gender TEXT, avatar TEXT)`,
@@ -45,15 +55,19 @@ db.serialize(() => {
     ];
     schemas.forEach(s => db.run(s));
     
-    // Migrations
-    const cols = [
-        ['dice_options', 'role', "TEXT DEFAULT 'wife'"],
-        ['location_unlocks', 'count', "INTEGER DEFAULT 0"],
-        ['sections', 'header_id', "INTEGER"]
-    ];
-    cols.forEach(([tbl, col, def]) => {
-        try { db.run(`ALTER TABLE ${tbl} ADD COLUMN ${col} ${def}`); } catch(e){}
-    });
+    // --- Safe Migrations ---
+    // This helper prevents the app from crashing if the column already exists
+    const safeRun = (sql) => {
+        db.run(sql, function(err) {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error("Migration warning:", err.message);
+            }
+        });
+    };
+
+    safeRun(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`);
+    safeRun(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`);
+    safeRun(`ALTER TABLE sections ADD COLUMN header_id INTEGER`);
     
     // Seed Dice
     db.get("SELECT count(*) as count FROM dice_options", (e, r) => {
@@ -65,6 +79,7 @@ db.serialize(() => {
     });
 });
 
+// --- Ntfy Helper ---
 const sendNtfy = (id, type='card') => {
     db.all(`SELECT * FROM settings`, [], (e, r) => {
         if(!r) return;
@@ -131,13 +146,12 @@ app.put('/api/user', auth, (req, res) => {
     db.run(q, p, (e)=>res.json({success:!e}));
 });
 
-// Settings
+// Settings & Ntfy
 app.get('/api/settings', auth, (req, res) => db.all(`SELECT * FROM settings`, [], (e,r)=>res.json(r?r.reduce((a,x)=>({...a,[x.key]:x.value}),{}):{})));
 app.put('/api/settings', auth, (req, res) => {
     db.serialize(()=>{
         const s = db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)`);
-        if(req.body.ntfy_url) { s.run('ntfy_url', req.body.ntfy_url); s.run('ntfy_topic', req.body.ntfy_topic); }
-        s.finalize();
+        s.run('ntfy_url', req.body.ntfy_url); s.run('ntfy_topic', req.body.ntfy_topic); s.finalize();
         res.json({success:true});
     });
 });
@@ -146,8 +160,26 @@ app.post('/api/settings/test', auth, (req, res) => {
     fetch(`${req.body.ntfy_url}/${req.body.ntfy_topic}`, {method:'POST', body:'Test'}).then(r=>res.json({success:r.ok})).catch(e=>res.status(500).json({error:e.message})); 
 });
 
+// Calendar Notes (Simple)
+app.get('/api/calendar', auth, (req, res) => db.all('SELECT * FROM calendar_notes', [], (e,r)=>res.json(r||[])));
+app.post('/api/calendar', auth, (req, res) => db.run('INSERT INTO calendar_notes (date, text) VALUES (?,?)', [req.body.date, req.body.text], function(){res.json({id:this.lastID})}));
+app.delete('/api/calendar/:id', auth, (req, res) => db.run('DELETE FROM calendar_notes WHERE id=?', [req.params.id], ()=>res.json({success:true})));
+
+// Generic Handlers
+const getTable = (t) => (req, res) => db.all(`SELECT * FROM ${t}`, [], (e,r)=>res.json(r||[]));
+const delItem = (t) => (req, res) => {
+    db.get(`SELECT filepath FROM ${t} WHERE id=?`,[req.params.id],(e,r)=>{
+        if(r) try { fs.unlinkSync(path.join(DATA_DIR, 'uploads', r.filepath.replace('/uploads/',''))); } catch(e){}
+        db.run(`DELETE FROM ${t} WHERE id=?`,[req.params.id], ()=>res.json({success:true}));
+    });
+};
+const postFile = (t) => (req, res) => {
+    if(!req.file) return res.status(400).json({error:'No file'});
+    db.run(`INSERT INTO ${t} (filepath) VALUES (?)`, [`/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`], function(){res.json({id:this.lastID})});
+};
+
 // Headers
-app.get('/api/headers', auth, (req, res) => db.all(`SELECT * FROM header_sections`, [], (e,r)=>res.json(r||[])));
+app.get('/api/headers', auth, getTable('header_sections'));
 app.post('/api/headers', auth, (req, res) => db.run(`INSERT INTO header_sections (title) VALUES (?)`, [req.body.title], function(){res.json({id:this.lastID})}));
 app.delete('/api/headers/:id', auth, (req, res) => {
     db.run(`UPDATE sections SET header_id=NULL WHERE header_id=?`, [req.params.id]);
@@ -155,7 +187,7 @@ app.delete('/api/headers/:id', auth, (req, res) => {
 });
 
 // Sections
-app.get('/api/sections', auth, (req, res) => db.all(`SELECT * FROM sections`, [], (e,r)=>res.json(r||[])));
+app.get('/api/sections', auth, getTable('sections'));
 app.post('/api/sections', auth, (req, res) => db.run(`INSERT INTO sections (title, header_id) VALUES (?,?)`, [req.body.title, req.body.header_id], function(){res.json({id:this.lastID})}));
 app.put('/api/sections/:id', auth, (req, res) => db.run(`UPDATE sections SET title=?, header_id=? WHERE id=?`, [req.body.title, req.body.header_id, req.params.id], ()=>res.json({success:true})));
 app.delete('/api/sections/:id', auth, (req, res) => {
@@ -167,7 +199,7 @@ app.delete('/api/sections/:id', auth, (req, res) => {
 });
 
 // Cards
-app.get('/api/cards', auth, (req, res) => db.all(`SELECT * FROM cards`, [], (e,r)=>res.json(r||[])));
+app.get('/api/cards', auth, getTable('cards'));
 app.post('/api/cards', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
     db.run(`INSERT INTO cards (filepath, section_id) VALUES (?,?)`, [`/uploads/cards/${req.file.filename}`, req.body.section_id||null], function(){res.json({id:this.lastID, filepath:`/uploads/cards/${req.file.filename}`})});
@@ -186,7 +218,7 @@ app.post('/api/cards/:id/scratch', auth, (req, res) => {
 app.get('/api/cards/:id/history', auth, (req, res) => db.all(`SELECT timestamp FROM card_history WHERE card_id=? ORDER BY timestamp DESC`, [req.params.id], (e,r)=>res.json(r||[])));
 
 // Books
-app.get('/api/books', auth, (req, res) => db.all(`SELECT * FROM books`, [], (e,r)=>res.json(r||[])));
+app.get('/api/books', auth, getTable('books'));
 app.post('/api/books', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
     db.run(`INSERT INTO books (title, filepath) VALUES (?,?)`, [req.file.originalname, `/uploads/books/${req.file.filename}`], function(){res.json({id:this.lastID})});
@@ -217,26 +249,23 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
     });
 });
 
-// Dice
-app.get('/api/dice', auth, (req, res) => db.all(`SELECT * FROM dice_options`, [], (e,r)=>res.json(r||[])));
+// Dice & Extras
+app.get('/api/dice', auth, getTable('dice_options'));
 app.put('/api/dice', auth, (req, res) => {
+    const { items, role } = req.body;
     db.serialize(()=>{
-        db.run(`DELETE FROM dice_options WHERE role=?`, [req.body.role||'wife']);
+        db.run(`DELETE FROM dice_options WHERE role=?`, [role||'wife']);
         const s=db.prepare(`INSERT INTO dice_options (type,text,role) VALUES (?,?,?)`);
-        req.body.items.forEach(i=>s.run(i.type,i.text, req.body.role||'wife'));
-        s.finalize();
-        res.json({success:true});
+        items.forEach(i=>s.run(i.type,i.text, role||'wife'));
+        s.finalize(); res.json({success:true});
     });
 });
-
-// Locations
-app.get('/api/locations', auth, (req, res) => db.all(`SELECT * FROM location_unlocks`, [], (e,r)=>res.json(r||[])));
+app.get('/api/locations', auth, getTable('location_unlocks'));
 app.post('/api/locations', auth, (req,res) => db.run(`INSERT INTO location_unlocks (name) VALUES (?)`,[req.body.name], function(){res.json({id:this.lastID})}));
 app.post('/api/locations/:id/toggle', auth, (req,res) => db.run(`UPDATE location_unlocks SET count=count+1, unlocked_at=? WHERE id=?`, [new Date().toISOString(), req.params.id], ()=>res.json({success:true})));
 app.post('/api/locations/:id/reset', auth, (req,res) => db.run(`UPDATE location_unlocks SET count=0, unlocked_at=NULL WHERE id=?`, [req.params.id], ()=>res.json({success:true})));
 app.delete('/api/locations/:id', auth, (req,res) => db.run(`DELETE FROM location_unlocks WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 
-// Fantasies
 app.get('/api/fantasies', auth, (req,res) => db.all(`SELECT * FROM fantasies WHERE pulled_at IS NULL`,[],(e,r)=>res.json(r||[])));
 app.get('/api/fantasies/history', auth, (req,res) => db.all(`SELECT * FROM fantasies WHERE pulled_at IS NOT NULL`,[],(e,r)=>res.json(r||[])));
 app.post('/api/fantasies', auth, (req,res) => db.run(`INSERT INTO fantasies (text) VALUES (?)`, [req.body.text], ()=>res.json({success:true})));
@@ -247,7 +276,6 @@ app.post('/api/fantasies/pull', auth, (req,res) => db.get(`SELECT * FROM fantasi
 app.post('/api/fantasies/:id/return', auth, (req,res) => db.run(`UPDATE fantasies SET pulled_at=NULL WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 app.delete('/api/fantasies/:id', auth, (req,res) => db.run(`DELETE FROM fantasies WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 
-// Galleries
 const gal = (t, sub) => {
     app.get(`/api/${t}`, auth, getTable(t));
     app.post(`/api/${t}`, auth, upload.single('file'), postFile(t));
@@ -262,11 +290,6 @@ gal('toys', 'toy');
 gal('lingerie', 'lingerie');
 gal('condoms', 'condoms');
 gal('lubes', 'lubes');
-
-// Calendar
-app.get('/api/calendar', auth, (req, res) => db.all('SELECT * FROM calendar_notes', [], (e,r)=>res.json(r||[])));
-app.post('/api/calendar', auth, (req, res) => db.run('INSERT INTO calendar_notes (date, text) VALUES (?,?)', [req.body.date, req.body.text], function(){res.json({id:this.lastID})}));
-app.delete('/api/calendar/:id', auth, (req, res) => db.run('DELETE FROM calendar_notes WHERE id=?', [req.params.id], ()=>res.json({success:true})));
 
 app.post('/api/reset-app', auth, (req, res) => {
     db.serialize(() => {
