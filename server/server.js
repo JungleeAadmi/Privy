@@ -1,8 +1,3 @@
-/**
- * Privy Backend - Node.js
- * COMPLETE VERSION WITH CALENDAR
- */
-
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
@@ -32,7 +27,7 @@ const db = new sqlite3.Database(DB_PATH);
 
 db.serialize(() => {
     const schemas = [
-        `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, name TEXT, age INTEGER, gender TEXT, avatar TEXT)`,
+        `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, name TEXT, age INTEGER, gender TEXT, avatar TEXT)`,
         `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`,
         `CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY, filepath TEXT, scratched_count INTEGER DEFAULT 0, section_id INTEGER)`,
         `CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY, title TEXT, header_id INTEGER)`,
@@ -139,7 +134,6 @@ app.put('/api/user', auth, (req, res) => {
     db.run(q, p, (e)=>res.json({success:!e}));
 });
 
-// Settings & Ntfy
 app.get('/api/settings', auth, (req, res) => db.all(`SELECT * FROM settings`, [], (e,r)=>res.json(r?r.reduce((a,x)=>({...a,[x.key]:x.value}),{}):{})));
 app.put('/api/settings', auth, (req, res) => {
     db.serialize(()=>{
@@ -160,7 +154,6 @@ app.get('/api/calendar', auth, (req, res) => db.all('SELECT * FROM calendar_note
 app.post('/api/calendar', auth, (req, res) => db.run('INSERT INTO calendar_notes (date, text) VALUES (?,?)', [req.body.date, req.body.text], function(){res.json({id:this.lastID})}));
 app.delete('/api/calendar/:id', auth, (req, res) => db.run('DELETE FROM calendar_notes WHERE id=?', [req.params.id], ()=>res.json({success:true})));
 
-// Generic Handlers
 const getTable = (t) => (req, res) => db.all(`SELECT * FROM ${t}`, [], (e,r)=>res.json(r||[]));
 const delItem = (t) => (req, res) => {
     db.get(`SELECT filepath FROM ${t} WHERE id=?`,[req.params.id],(e,r)=>{
@@ -173,7 +166,6 @@ const postFile = (t) => (req, res) => {
     db.run(`INSERT INTO ${t} (filepath) VALUES (?)`, [`/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`], function(){res.json({id:this.lastID})});
 };
 
-// Sections & Headers
 app.get('/api/headers', auth, getTable('header_sections'));
 app.post('/api/headers', auth, (req, res) => db.run(`INSERT INTO header_sections (title) VALUES (?)`, [req.body.title], function(){res.json({id:this.lastID})}));
 app.delete('/api/headers/:id', auth, (req, res) => {
@@ -191,7 +183,6 @@ app.delete('/api/sections/:id', auth, (req, res) => {
     });
 });
 
-// Cards
 app.get('/api/cards', auth, getTable('cards'));
 app.post('/api/cards', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
@@ -210,7 +201,6 @@ app.post('/api/cards/:id/scratch', auth, (req, res) => {
 });
 app.get('/api/cards/:id/history', auth, (req, res) => db.all(`SELECT timestamp FROM card_history WHERE card_id=? ORDER BY timestamp DESC`, [req.params.id], (e,r)=>res.json(r||[])));
 
-// Books
 app.get('/api/books', auth, getTable('books'));
 app.post('/api/books', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
@@ -242,7 +232,6 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
     });
 });
 
-// Dice & Extras
 app.get('/api/dice', auth, getTable('dice_options'));
 app.put('/api/dice', auth, (req, res) => {
     const { items, role } = req.body;
@@ -253,6 +242,7 @@ app.put('/api/dice', auth, (req, res) => {
         s.finalize(); res.json({success:true});
     });
 });
+
 app.get('/api/locations', auth, getTable('location_unlocks'));
 app.post('/api/locations', auth, (req,res) => db.run(`INSERT INTO location_unlocks (name) VALUES (?)`,[req.body.name], function(){res.json({id:this.lastID})}));
 app.post('/api/locations/:id/toggle', auth, (req,res) => db.run(`UPDATE location_unlocks SET count=count+1, unlocked_at=? WHERE id=?`, [new Date().toISOString(), req.params.id], ()=>res.json({success:true})));
@@ -269,7 +259,6 @@ app.post('/api/fantasies/pull', auth, (req,res) => db.get(`SELECT * FROM fantasi
 app.post('/api/fantasies/:id/return', auth, (req,res) => db.run(`UPDATE fantasies SET pulled_at=NULL WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 app.delete('/api/fantasies/:id', auth, (req,res) => db.run(`DELETE FROM fantasies WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 
-// Galleries
 const gal = (t, sub) => {
     app.get(`/api/${t}`, auth, getTable(t));
     app.post(`/api/${t}`, auth, upload.single('file'), postFile(t));
@@ -285,7 +274,6 @@ gal('lingerie', 'lingerie');
 gal('condoms', 'condoms');
 gal('lubes', 'lubes');
 
-// Export
 app.get('/api/export', auth, (req, res) => {
     const ts = Date.now();
     const root = path.join('/tmp', `export_${ts}`);
@@ -293,11 +281,9 @@ app.get('/api/export', auth, (req, res) => {
     const cp = (src, dest) => {
         const s = path.join(DATA_DIR,'uploads',src.replace(/^\/uploads\//,''));
         const d = path.join(root,'data',dest);
-        const dir = path.dirname(d);
-        if(!fs.existsSync(dir)) fs.mkdirSync(dir, {recursive:true});
+        if(!fs.existsSync(path.dirname(d))) fs.mkdirSync(path.dirname(d), {recursive:true});
         if(fs.existsSync(s)) fs.copyFileSync(s, d);
     };
-
     db.serialize(() => {
         db.all(`SELECT c.filepath, s.title as sec, h.title as head FROM cards c LEFT JOIN sections s ON c.section_id=s.id LEFT JOIN header_sections h ON s.header_id=h.id`, [], (e,r)=>{
             if(r) r.forEach(x => {

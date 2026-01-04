@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar as CalIcon, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, Download, Grid, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, Download, Grid, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const API_URL = '/api';
 const safeFetch = async (url, opts={}) => { try { const r=await fetch(url,opts); return r.headers.get("content-type")?.includes("json") ? await r.json() : null; } catch(e){ return null; } };
@@ -134,7 +134,7 @@ const CycleTracker = () => {
 const Auth = ({ setUser }) => {
   const [login, setLogin] = useState(true); const [f, setF] = useState({});
   const sub = async (e) => { e.preventDefault(); const r=await safeFetch(`${API_URL}/${login?'login':'register'}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)}); if(r?.token){localStorage.setItem('token',r.token);localStorage.setItem('user',JSON.stringify(r.user));setUser(r.user);}else alert(r?.error||'Error'); };
-  return <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-eggplant to-black text-gold p-6"><h1 className="text-5xl mb-8">{login?'Privy':'Join'}</h1><form onSubmit={sub} className="w-full max-w-sm space-y-4"><input className="w-full p-2 bg-black border border-gold rounded text-white" placeholder="Username" onChange={e=>setF({...f,username:e.target.value})}/><input className="w-full p-2 bg-black border border-gold rounded text-white" type="password" placeholder="Password" onChange={e=>setF({...f,password:e.target.value})}/>{!login && <input className="w-full p-2 bg-black border border-gold rounded text-white" placeholder="Name" onChange={e=>setF({...f,name:e.target.value})}/>}<button className="w-full bg-red-800 text-white py-2 rounded font-bold">{login?'Enter':'Sign Up'}</button></form><button onClick={()=>setLogin(!login)} className="mt-4 text-sm underline">{login?"Create Account":"Login"}</button></div>;
+  return <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-eggplant to-black text-gold p-6"><h1 className="text-5xl mb-8 font-caveat">{login?'Privy':'Join'}</h1><form onSubmit={sub} className="w-full max-w-sm space-y-4"><input className="w-full p-2 bg-black border border-gold rounded text-white" placeholder="Username" onChange={e=>setF({...f,username:e.target.value})}/><input className="w-full p-2 bg-black border border-gold rounded text-white" type="password" placeholder="Password" onChange={e=>setF({...f,password:e.target.value})}/>{!login && <input className="w-full p-2 bg-black border border-gold rounded text-white" placeholder="Name" onChange={e=>setF({...f,name:e.target.value})}/>}<button className="w-full bg-red-800 text-white py-2 rounded font-bold">{login?'Enter':'Sign Up'}</button></form><button onClick={()=>setLogin(!login)} className="mt-4 text-sm underline">{login?"Create Account":"Login"}</button></div>;
 };
 
 const Gallery = ({ title, endpoint, icon }) => {
@@ -153,7 +153,7 @@ const Gallery = ({ title, endpoint, icon }) => {
 
 const Protection = () => {
     const [t, setT] = useState('condoms');
-    return <div className="w-full h-full flex flex-col"><div className="flex justify-center gap-4 p-4"><button onClick={()=>setT('condoms')} className={`px-4 py-1 rounded-full border ${t==='condoms'?'bg-gold text-black':'text-gray-500'}`}>Condoms</button><button onClick={()=>setT('lubes')} className={`px-4 py-1 rounded-full border ${t==='lubes'?'bg-gold text-black':'text-gray-500'}`}>Lubes</button></div>{t==='condoms'?<Gallery title="Condoms" endpoint="condoms" icon={<Shield/>}/>:<Gallery title="Lubes" endpoint="lubes" icon={<Folder/>}/>}</div>;
+    return <div className="w-full h-full flex flex-col"><div className="flex justify-center gap-4 p-4"><button onClick={()=>setT('condoms')} className={`px-4 py-1 rounded-full border ${t==='condoms'?'bg-gold text-black':'text-gray-400 border-gray-600'}`}>Condoms</button><button onClick={()=>setT('lubes')} className={`px-4 py-1 rounded-full border ${t==='lubes'?'bg-gold text-black':'text-gray-400 border-gray-600'}`}>Lubes</button></div>{t==='condoms'?<Gallery title="Condoms" endpoint="condoms" icon={<Shield/>}/>:<Gallery title="Lubes" endpoint="lubes" icon={<Folder/>}/>}</div>;
 };
 
 const Spin = () => {
@@ -214,6 +214,8 @@ const Settings = ({user, logout}) => {
     const save = async () => { await safeFetch(`${API_URL}/settings`,{method:'PUT',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('token')}`},body:JSON.stringify(cfg)}); alert("Saved"); };
     return <div className="p-6 text-white overflow-y-auto"><h2 className="text-2xl mb-4 text-gold">Settings</h2><div className="space-y-4 mb-8"><div><label>Cycle Length</label><input type="number" className="w-full bg-black border p-2" value={cfg.cycle_len} onChange={e=>setCfg({...cfg,cycle_len:e.target.value})}/></div><div><label>Period Length</label><input type="number" className="w-full bg-black border p-2" value={cfg.period_len} onChange={e=>setCfg({...cfg,period_len:e.target.value})}/></div><div><label>Last Period Start</label><input type="date" className="w-full bg-black border p-2 text-white" value={cfg.cycle_start} onChange={e=>setCfg({...cfg,cycle_start:e.target.value})}/></div><button onClick={save} className="bg-gold text-black px-4 py-2 rounded">Save</button></div><button onClick={logout} className="text-red-500 border border-red-500 px-4 py-2 rounded">Logout</button></div>;
 };
+
+const Notifications = () => <div className="p-6 text-white text-center">Notifications Placeholder</div>;
 
 const Layout = ({ children, user, logout }) => {
   const [menu, setMenu] = useState(false);
