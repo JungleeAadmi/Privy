@@ -82,7 +82,7 @@ const playSound = (type) => {
         gain.connect(ctx.destination);
         const now = ctx.currentTime;
         if (type === 'ting') {
-            osc.frequency.setValueAtTime(800, now); osc.frequency.exponentialRampToValueAtTime(400, now + 0.5);
+            osc.type = 'sine'; osc.frequency.setValueAtTime(800, now); osc.frequency.exponentialRampToValueAtTime(400, now + 0.5);
             gain.gain.setValueAtTime(0.5, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
             osc.start(now); osc.stop(now + 0.5);
         } else if (type === 'end') {
@@ -212,7 +212,7 @@ const GalleryItem = ({ item, onDeleteRequest }) => {
     );
 };
 
-// --- Pages ---
+// --- Pages (Must be defined BEFORE Layout & App) ---
 
 const Auth = ({ setUser }) => {
   const [isLogin, setIsLogin] = useState(true);
@@ -356,12 +356,13 @@ const Spin = () => {
         fetchData();
     }, []);
 
-    const filteredSections = activeHeader ? sections.filter(s => s.header_id === activeHeader) : sections; 
+    const filteredSections = activeHeader ? sections.filter(s => s.header_id === activeHeader) : sections.filter(s => s.header_id === null); 
     const wheelGradient = `conic-gradient(${Array.from({length: 16}).map((_, i) => `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`).join(', ')})`;
     const handleSpin = () => { if (isSpinning) return; const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; }); if (pool.length === 0) { alert("No cards in this section!"); return; } setIsSpinning(true); setWinner(null); const winningIndex = Math.floor(Math.random() * 16); const winningCard = pool[Math.floor(Math.random() * pool.length)]; const segmentAngle = 360 / 16; const offset = (winningIndex * segmentAngle) + (segmentAngle / 2); const target = 360 - offset; let delta = target - (rotation % 360); if (delta < 0) delta += 360; const totalRotation = rotation + (5 * 360) + delta; setRotation(totalRotation); setTimeout(() => { setIsSpinning(false); setWinner(winningCard); safeFetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000); };
     return (
         <div className="flex flex-col items-center w-full min-h-full py-4">
              <div className="w-full flex gap-2 overflow-x-auto p-2 pb-0 mb-2 no-scrollbar justify-center shrink-0">
+                <button onClick={() => setActiveHeader(null)} className={`px-4 py-2 rounded-full whitespace-nowrap border text-sm font-bold ${activeHeader === null ? 'bg-eggplant border-gold text-gold shadow-md' : 'bg-gray-900 border-gray-700 text-gray-400'}`}>All / Unsorted</button>
                 {headers.map(h => ( <HeaderTab key={h.id} header={h} activeHeader={activeHeader} setActiveHeader={setActiveHeader} /> ))}
             </div>
             <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">
@@ -551,7 +552,6 @@ const Layout = ({ children, user, logout }) => {
   );
 };
 
-// --- App Component (MUST BE LAST) ---
 export default function App() {
   const [user, setUser] = useState(null);
   useEffect(() => { try { const saved = localStorage.getItem('user'); if (saved) setUser(JSON.parse(saved)); } catch (e) { localStorage.clear(); } }, []);
