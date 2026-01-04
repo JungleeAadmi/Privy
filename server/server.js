@@ -1,6 +1,6 @@
 /**
  * Privy Backend - Node.js
- * STABLE ROLLBACK VERSION (No Export, No Headers, No Calendar)
+ * STABLE + CALENDAR
  */
 
 const express = require('express');
@@ -11,7 +11,6 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
-const { exec } = require('child_process');
 
 // --- Global Error Handlers ---
 process.on('uncaughtException', (err) => {
@@ -56,11 +55,8 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS card_history (id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(card_id) REFERENCES cards(id))`);
     
     db.run(`CREATE TABLE IF NOT EXISTS books (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, filepath TEXT)`);
-    
     db.run(`CREATE TABLE IF NOT EXISTS dice_options (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, text TEXT, role TEXT DEFAULT 'wife')`);
-    
     db.run(`CREATE TABLE IF NOT EXISTS location_unlocks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, unlocked_at DATETIME, count INTEGER DEFAULT 0)`);
-    
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, pulled_at DATETIME)`);
 
     // Galleries
@@ -69,14 +65,11 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
 
+    // Calendar
+    db.run(`CREATE TABLE IF NOT EXISTS calendar_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, text TEXT)`);
+
     // Safe Migrations
-    const runMigration = (sql) => {
-        try {
-            db.run(sql, () => {});
-        } catch (e) {
-            // Ignore if column exists
-        }
-    };
+    const runMigration = (sql) => { try { db.run(sql, () => {}); } catch (e) {} };
     runMigration(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`);
     runMigration(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`);
 
@@ -214,18 +207,25 @@ app.get('/api/settings', auth, (req, res) => {
 app.put('/api/settings', auth, (req, res) => {
     db.serialize(() => {
         const s = db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`);
-        s.run('ntfy_url', req.body.ntfy_url);
-        s.run('ntfy_topic', req.body.ntfy_topic);
+        if (req.body.ntfy_url !== undefined) { s.run('ntfy_url', req.body.ntfy_url); s.run('ntfy_topic', req.body.ntfy_topic); }
+        if (req.body.cycle_start !== undefined) { s.run('cycle_start', req.body.cycle_start); s.run('cycle_len', req.body.cycle_len); s.run('period_len', req.body.period_len); }
         s.finalize();
         res.json({success:true});
     });
 });
-app.post('/api/settings/test', auth, (req, res) => {
-    const { ntfy_url, ntfy_topic } = req.body;
-    if(!ntfy_url) return res.status(400).json({error:'No Config'});
-    const u = new URL(`${ntfy_url.replace(/\/$/,'')}/${ntfy_topic}`);
-    if(typeof fetch !== 'function') return res.status(500).json({error:'Fetch missing'});
-    fetch(u.toString(), {method:'POST', body:'Test'}).then(r=>{if(r.ok)res.json({success:true});else res.status(500).json({error:r.status})}).catch(e=>res.status(500).json({error:e.message}));
+
+// Calendar Notes
+app.get('/api/calendar', auth, (req, res) => {
+    db.all('SELECT * FROM calendar_notes', [], (err, rows) => res.json(rows || []));
+});
+app.post('/api/calendar', auth, (req, res) => {
+    db.run('INSERT INTO calendar_notes (date, text) VALUES (?,?)', [req.body.date, req.body.text], function(err) {
+        if(err) return res.status(500).json({error: err.message});
+        res.json({id: this.lastID});
+    });
+});
+app.delete('/api/calendar/:id', auth, (req, res) => {
+    db.run('DELETE FROM calendar_notes WHERE id=?', [req.params.id], (err) => res.json({success: true}));
 });
 
 // Sections
@@ -362,11 +362,13 @@ app.get('/api/fantasies/history', auth, (req, res) => {
 app.post('/api/fantasies', auth, (req, res) => {
     db.run(`INSERT INTO fantasies (text) VALUES (?)`, [req.body.text], function(){ res.json({success:true}); });
 });
-app.post('/api/fantasies/pull', auth, (req, res) => db.get(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY RANDOM() LIMIT 1`, [], (err, row) => {
-    if(!row) return res.json({empty:true});
-    db.run(`UPDATE fantasies SET pulled_at=CURRENT_TIMESTAMP WHERE id=?`, [row.id]);
-    res.json(row);
-}));
+app.post('/api/fantasies/pull', auth, (req, res) => {
+    db.get(`SELECT * FROM fantasies WHERE pulled_at IS NULL ORDER BY RANDOM() LIMIT 1`, [], (err, row) => {
+        if(!row) return res.json({empty:true});
+        db.run(`UPDATE fantasies SET pulled_at=CURRENT_TIMESTAMP WHERE id=?`, [row.id]);
+        res.json(row);
+    });
+});
 app.post('/api/fantasies/:id/return', auth, (req, res) => {
     db.run(`UPDATE fantasies SET pulled_at=NULL WHERE id=?`, [req.params.id], ()=>res.json({success:true}));
 });
