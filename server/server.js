@@ -54,6 +54,15 @@ db.serialize(() => {
     cols.forEach(([tbl, col, def]) => {
         try { db.run(`ALTER TABLE ${tbl} ADD COLUMN ${col} ${def}`); } catch(e){}
     });
+    
+    // Seed Dice
+    db.get("SELECT count(*) as count FROM dice_options", (e, r) => {
+        if (r && r.count === 0) {
+            const d = [['act','Kiss','wife'],['act','Lick','wife'],['location','Neck','wife'],['act','Kiss','husband'],['location','Neck','husband']];
+            const s = db.prepare("INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)");
+            d.forEach(v => s.run(v)); s.finalize();
+        }
+    });
 });
 
 const sendNtfy = (id, type='card') => {
@@ -122,11 +131,13 @@ app.put('/api/user', auth, (req, res) => {
     db.run(q, p, (e)=>res.json({success:!e}));
 });
 
+// Settings
 app.get('/api/settings', auth, (req, res) => db.all(`SELECT * FROM settings`, [], (e,r)=>res.json(r?r.reduce((a,x)=>({...a,[x.key]:x.value}),{}):{})));
 app.put('/api/settings', auth, (req, res) => {
     db.serialize(()=>{
         const s = db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)`);
-        s.run('ntfy_url', req.body.ntfy_url); s.run('ntfy_topic', req.body.ntfy_topic); s.finalize();
+        if(req.body.ntfy_url) { s.run('ntfy_url', req.body.ntfy_url); s.run('ntfy_topic', req.body.ntfy_topic); }
+        s.finalize();
         res.json({success:true});
     });
 });
@@ -135,30 +146,16 @@ app.post('/api/settings/test', auth, (req, res) => {
     fetch(`${req.body.ntfy_url}/${req.body.ntfy_topic}`, {method:'POST', body:'Test'}).then(r=>res.json({success:r.ok})).catch(e=>res.status(500).json({error:e.message})); 
 });
 
-// Calendar Notes
-app.get('/api/calendar', auth, (req, res) => db.all('SELECT * FROM calendar_notes', [], (e,r)=>res.json(r||[])));
-app.post('/api/calendar', auth, (req, res) => db.run('INSERT INTO calendar_notes (date, text) VALUES (?,?)', [req.body.date, req.body.text], function(){res.json({id:this.lastID})}));
-app.delete('/api/calendar/:id', auth, (req, res) => db.run('DELETE FROM calendar_notes WHERE id=?', [req.params.id], ()=>res.json({success:true})));
-
-const getTable = (t) => (req, res) => db.all(`SELECT * FROM ${t}`, [], (e,r)=>res.json(r||[]));
-const delItem = (t) => (req, res) => {
-    db.get(`SELECT filepath FROM ${t} WHERE id=?`,[req.params.id],(e,r)=>{
-        if(r) try { fs.unlinkSync(path.join(DATA_DIR, 'uploads', r.filepath.replace('/uploads/',''))); } catch(e){}
-        db.run(`DELETE FROM ${t} WHERE id=?`,[req.params.id], ()=>res.json({success:true}));
-    });
-};
-const postFile = (t) => (req, res) => {
-    if(!req.file) return res.status(400).json({error:'No file'});
-    db.run(`INSERT INTO ${t} (filepath) VALUES (?)`, [`/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`], function(){res.json({id:this.lastID})});
-};
-
-app.get('/api/headers', auth, getTable('header_sections'));
+// Headers
+app.get('/api/headers', auth, (req, res) => db.all(`SELECT * FROM header_sections`, [], (e,r)=>res.json(r||[])));
 app.post('/api/headers', auth, (req, res) => db.run(`INSERT INTO header_sections (title) VALUES (?)`, [req.body.title], function(){res.json({id:this.lastID})}));
 app.delete('/api/headers/:id', auth, (req, res) => {
     db.run(`UPDATE sections SET header_id=NULL WHERE header_id=?`, [req.params.id]);
     db.run(`DELETE FROM header_sections WHERE id=?`, [req.params.id], ()=>res.json({success:true}));
 });
-app.get('/api/sections', auth, getTable('sections'));
+
+// Sections
+app.get('/api/sections', auth, (req, res) => db.all(`SELECT * FROM sections`, [], (e,r)=>res.json(r||[])));
 app.post('/api/sections', auth, (req, res) => db.run(`INSERT INTO sections (title, header_id) VALUES (?,?)`, [req.body.title, req.body.header_id], function(){res.json({id:this.lastID})}));
 app.put('/api/sections/:id', auth, (req, res) => db.run(`UPDATE sections SET title=?, header_id=? WHERE id=?`, [req.body.title, req.body.header_id, req.params.id], ()=>res.json({success:true})));
 app.delete('/api/sections/:id', auth, (req, res) => {
@@ -169,7 +166,8 @@ app.delete('/api/sections/:id', auth, (req, res) => {
     });
 });
 
-app.get('/api/cards', auth, getTable('cards'));
+// Cards
+app.get('/api/cards', auth, (req, res) => db.all(`SELECT * FROM cards`, [], (e,r)=>res.json(r||[])));
 app.post('/api/cards', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
     db.run(`INSERT INTO cards (filepath, section_id) VALUES (?,?)`, [`/uploads/cards/${req.file.filename}`, req.body.section_id||null], function(){res.json({id:this.lastID, filepath:`/uploads/cards/${req.file.filename}`})});
@@ -187,7 +185,8 @@ app.post('/api/cards/:id/scratch', auth, (req, res) => {
 });
 app.get('/api/cards/:id/history', auth, (req, res) => db.all(`SELECT timestamp FROM card_history WHERE card_id=? ORDER BY timestamp DESC`, [req.params.id], (e,r)=>res.json(r||[])));
 
-app.get('/api/books', auth, getTable('books'));
+// Books
+app.get('/api/books', auth, (req, res) => db.all(`SELECT * FROM books`, [], (e,r)=>res.json(r||[])));
 app.post('/api/books', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
     db.run(`INSERT INTO books (title, filepath) VALUES (?,?)`, [req.file.originalname, `/uploads/books/${req.file.filename}`], function(){res.json({id:this.lastID})});
@@ -218,23 +217,26 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
     });
 });
 
-app.get('/api/dice', auth, getTable('dice_options'));
+// Dice
+app.get('/api/dice', auth, (req, res) => db.all(`SELECT * FROM dice_options`, [], (e,r)=>res.json(r||[])));
 app.put('/api/dice', auth, (req, res) => {
-    const { items, role } = req.body;
     db.serialize(()=>{
-        db.run(`DELETE FROM dice_options WHERE role=?`, [role||'wife']);
+        db.run(`DELETE FROM dice_options WHERE role=?`, [req.body.role||'wife']);
         const s=db.prepare(`INSERT INTO dice_options (type,text,role) VALUES (?,?,?)`);
-        items.forEach(i=>s.run(i.type,i.text, role||'wife'));
+        req.body.items.forEach(i=>s.run(i.type,i.text, req.body.role||'wife'));
         s.finalize();
         res.json({success:true});
     });
 });
-app.get('/api/locations', auth, getTable('location_unlocks'));
+
+// Locations
+app.get('/api/locations', auth, (req, res) => db.all(`SELECT * FROM location_unlocks`, [], (e,r)=>res.json(r||[])));
 app.post('/api/locations', auth, (req,res) => db.run(`INSERT INTO location_unlocks (name) VALUES (?)`,[req.body.name], function(){res.json({id:this.lastID})}));
 app.post('/api/locations/:id/toggle', auth, (req,res) => db.run(`UPDATE location_unlocks SET count=count+1, unlocked_at=? WHERE id=?`, [new Date().toISOString(), req.params.id], ()=>res.json({success:true})));
 app.post('/api/locations/:id/reset', auth, (req,res) => db.run(`UPDATE location_unlocks SET count=0, unlocked_at=NULL WHERE id=?`, [req.params.id], ()=>res.json({success:true})));
 app.delete('/api/locations/:id', auth, (req,res) => db.run(`DELETE FROM location_unlocks WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 
+// Fantasies
 app.get('/api/fantasies', auth, (req,res) => db.all(`SELECT * FROM fantasies WHERE pulled_at IS NULL`,[],(e,r)=>res.json(r||[])));
 app.get('/api/fantasies/history', auth, (req,res) => db.all(`SELECT * FROM fantasies WHERE pulled_at IS NOT NULL`,[],(e,r)=>res.json(r||[])));
 app.post('/api/fantasies', auth, (req,res) => db.run(`INSERT INTO fantasies (text) VALUES (?)`, [req.body.text], ()=>res.json({success:true})));
@@ -245,6 +247,7 @@ app.post('/api/fantasies/pull', auth, (req,res) => db.get(`SELECT * FROM fantasi
 app.post('/api/fantasies/:id/return', auth, (req,res) => db.run(`UPDATE fantasies SET pulled_at=NULL WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 app.delete('/api/fantasies/:id', auth, (req,res) => db.run(`DELETE FROM fantasies WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 
+// Galleries
 const gal = (t, sub) => {
     app.get(`/api/${t}`, auth, getTable(t));
     app.post(`/api/${t}`, auth, upload.single('file'), postFile(t));
@@ -259,6 +262,11 @@ gal('toys', 'toy');
 gal('lingerie', 'lingerie');
 gal('condoms', 'condoms');
 gal('lubes', 'lubes');
+
+// Calendar
+app.get('/api/calendar', auth, (req, res) => db.all('SELECT * FROM calendar_notes', [], (e,r)=>res.json(r||[])));
+app.post('/api/calendar', auth, (req, res) => db.run('INSERT INTO calendar_notes (date, text) VALUES (?,?)', [req.body.date, req.body.text], function(){res.json({id:this.lastID})}));
+app.delete('/api/calendar/:id', auth, (req, res) => db.run('DELETE FROM calendar_notes WHERE id=?', [req.params.id], ()=>res.json({success:true})));
 
 app.post('/api/reset-app', auth, (req, res) => {
     db.serialize(() => {
