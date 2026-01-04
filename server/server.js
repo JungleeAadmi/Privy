@@ -1,6 +1,6 @@
 /**
  * Privy Backend - Node.js
- * STABLE VERSION - No Export Feature
+ * STABLE ROLLBACK VERSION (No Export, No Headers, No Calendar)
  */
 
 const express = require('express');
@@ -11,7 +11,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
-const { exec } = require('child_process'); // Kept for PDF extraction
+const { exec } = require('child_process');
 
 // --- Global Error Handlers ---
 process.on('uncaughtException', (err) => {
@@ -51,22 +51,16 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, name TEXT, age INTEGER, gender TEXT, avatar TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
     
-    // Cards & Structure
     db.run(`CREATE TABLE IF NOT EXISTS cards (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, scratched_count INTEGER DEFAULT 0, section_id INTEGER)`);
-    db.run(`CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, header_id INTEGER)`);
-    db.run(`CREATE TABLE IF NOT EXISTS header_sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS sections (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS card_history (id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(card_id) REFERENCES cards(id))`);
     
-    // Books
     db.run(`CREATE TABLE IF NOT EXISTS books (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, filepath TEXT)`);
     
-    // Dice
     db.run(`CREATE TABLE IF NOT EXISTS dice_options (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, text TEXT, role TEXT DEFAULT 'wife')`);
     
-    // Locations
     db.run(`CREATE TABLE IF NOT EXISTS location_unlocks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, unlocked_at DATETIME, count INTEGER DEFAULT 0)`);
     
-    // Fantasies
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, pulled_at DATETIME)`);
 
     // Galleries
@@ -75,10 +69,7 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
 
-    // Calendar
-    db.run(`CREATE TABLE IF NOT EXISTS calendar_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, text TEXT)`);
-
-    // Migrations
+    // Safe Migrations
     const runMigration = (sql) => {
         try {
             db.run(sql, () => {});
@@ -88,7 +79,6 @@ db.serialize(() => {
     };
     runMigration(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`);
     runMigration(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`);
-    runMigration(`ALTER TABLE sections ADD COLUMN header_id INTEGER`);
 
     // Seed Data
     db.get("SELECT count(*) as count FROM dice_options", (err, row) => {
@@ -147,7 +137,7 @@ const sendNtfy = (itemId, type = 'card') => {
                     u.searchParams.append('message', message);
                     u.searchParams.append('title', title);
                     u.searchParams.append('filename', filename);
-                    
+
                     if (typeof fetch === 'function') {
                         fetch(u.toString(), {
                             method: 'POST',
@@ -224,8 +214,8 @@ app.get('/api/settings', auth, (req, res) => {
 app.put('/api/settings', auth, (req, res) => {
     db.serialize(() => {
         const s = db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`);
-        if (req.body.ntfy_url) { s.run('ntfy_url', req.body.ntfy_url); s.run('ntfy_topic', req.body.ntfy_topic); }
-        if (req.body.cycle_start) { s.run('cycle_start', req.body.cycle_start); s.run('cycle_len', req.body.cycle_len); s.run('period_len', req.body.period_len); }
+        s.run('ntfy_url', req.body.ntfy_url);
+        s.run('ntfy_topic', req.body.ntfy_topic);
         s.finalize();
         res.json({success:true});
     });
@@ -234,38 +224,8 @@ app.post('/api/settings/test', auth, (req, res) => {
     const { ntfy_url, ntfy_topic } = req.body;
     if(!ntfy_url) return res.status(400).json({error:'No Config'});
     const u = new URL(`${ntfy_url.replace(/\/$/,'')}/${ntfy_topic}`);
-    fetch(u.toString(), {method:'POST', body:'Test'}).then(r=>res.json({success:r.ok})).catch(e=>res.status(500).json({error:e.message}));
-});
-
-// Calendar
-app.get('/api/calendar', auth, (req, res) => {
-    db.all('SELECT * FROM calendar_notes', [], (err, rows) => res.json(rows || []));
-});
-app.post('/api/calendar', auth, (req, res) => {
-    db.run('INSERT INTO calendar_notes (date, text) VALUES (?,?)', [req.body.date, req.body.text], function(err) {
-        if(err) return res.status(500).json({error: err.message});
-        res.json({id: this.lastID});
-    });
-});
-app.delete('/api/calendar/:id', auth, (req, res) => {
-    db.run('DELETE FROM calendar_notes WHERE id=?', [req.params.id], (err) => res.json({success: true}));
-});
-
-// Headers
-app.get('/api/headers', auth, (req, res) => {
-    db.all(`SELECT * FROM header_sections`, [], (err, rows) => res.json(rows || []));
-});
-app.post('/api/headers', auth, (req, res) => {
-    db.run(`INSERT INTO header_sections (title) VALUES (?)`, [req.body.title], function(err){ res.json({id:this.lastID}); });
-});
-app.delete('/api/headers/:id', auth, (req, res) => {
-    db.serialize(() => {
-        db.run(`UPDATE sections SET header_id = NULL WHERE header_id = ?`, [req.params.id]);
-        db.run(`DELETE FROM header_sections WHERE id = ?`, [req.params.id], () => res.json({success:true}));
-    });
-});
-app.put('/api/headers/:id', auth, (req, res) => {
-    db.run(`UPDATE header_sections SET title = ? WHERE id = ?`, [req.body.title, req.params.id], (err)=>{ res.json({success:true}); });
+    if(typeof fetch !== 'function') return res.status(500).json({error:'Fetch missing'});
+    fetch(u.toString(), {method:'POST', body:'Test'}).then(r=>{if(r.ok)res.json({success:true});else res.status(500).json({error:r.status})}).catch(e=>res.status(500).json({error:e.message}));
 });
 
 // Sections
@@ -273,10 +233,10 @@ app.get('/api/sections', auth, (req, res) => {
     db.all(`SELECT * FROM sections`, [], (err, rows) => res.json(rows || []));
 });
 app.post('/api/sections', auth, (req, res) => {
-    db.run(`INSERT INTO sections (title, header_id) VALUES (?, ?)`, [req.body.title, req.body.header_id || null], function(err){ res.json({id:this.lastID}); });
+    db.run(`INSERT INTO sections (title) VALUES (?)`, [req.body.title], function(err){ res.json({id:this.lastID}); });
 });
 app.put('/api/sections/:id', auth, (req, res) => {
-    db.run(`UPDATE sections SET title=?, header_id=? WHERE id=?`, [req.body.title, req.body.header_id, req.params.id], () => res.json({success:true}));
+    db.run(`UPDATE sections SET title=? WHERE id=?`, [req.body.title, req.params.id], () => res.json({success:true}));
 });
 app.delete('/api/sections/:id', auth, (req, res) => {
     db.all(`SELECT filepath FROM cards WHERE section_id = ?`, [req.params.id], (err, rows) => {
@@ -471,8 +431,6 @@ app.get('/api/lubes', auth, handleGalleryGet('lubes'));
 app.post('/api/lubes', auth, upload.single('file'), handleGalleryPost('lubes', 'lubes'));
 app.delete('/api/lubes/:id', auth, handleGalleryDelete('lubes'));
 app.post('/api/lubes/:id/draw', auth, handleGalleryDraw('lubes', 'lubes'));
-
-// Export Removed per request
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../client/dist/index.html')));
 app.listen(PORT, () => console.log(`🚀 Port ${PORT}`));
