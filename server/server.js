@@ -43,15 +43,18 @@ db.serialize(() => {
         `CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`
     ];
     schemas.forEach(s => db.run(s));
+    try {
+        db.run(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`,()=>{});
+        db.run(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`,()=>{});
+        db.run(`ALTER TABLE sections ADD COLUMN header_id INTEGER`,()=>{});
+    } catch(e){}
     
-    // Migrations
-    const cols = [
-        ['dice_options', 'role', "TEXT DEFAULT 'wife'"],
-        ['location_unlocks', 'count', "INTEGER DEFAULT 0"],
-        ['sections', 'header_id', "INTEGER"]
-    ];
-    cols.forEach(([tbl, col, def]) => {
-        try { db.run(`ALTER TABLE ${tbl} ADD COLUMN ${col} ${def}`); } catch(e){}
+    db.get("SELECT count(*) as count FROM dice_options", (e, r) => {
+        if (r && r.count === 0) {
+            const d = [['act','Kiss','wife'],['act','Lick','wife'],['location','Neck','wife'],['act','Kiss','husband'],['location','Neck','husband']];
+            const s = db.prepare("INSERT INTO dice_options (type, text, role) VALUES (?, ?, ?)");
+            d.forEach(v => s.run(v)); s.finalize();
+        }
     });
 });
 
@@ -60,22 +63,17 @@ const sendNtfy = (id, type='card') => {
         if(!r) return;
         const s = r.reduce((a,x)=>({...a, [x.key]:x.value}),{});
         if(!s.ntfy_url) return;
-        let tbl='cards', msg="New Activity", title="Privy Update";
-        
-        if(type==='toy') { tbl='toys'; title="Toy Selected!"; }
-        else if(type==='lingerie') { tbl='lingerie'; title="Wear This!"; }
-        else if(type==='condoms') { tbl='condoms'; title="Safety First"; }
-        else if(type==='lubes') { tbl='lubes'; title="Lube Up"; }
-
+        let tbl='cards', msg="New Activity";
+        if(type==='toy') tbl='toys'; else if(type==='lingerie') tbl='lingerie';
+        else if(type==='condoms') tbl='condoms'; else if(type==='lubes') tbl='lubes';
         db.get(`SELECT filepath FROM ${tbl} WHERE id=?`, [id], (e, row)=>{
             if(!row) return;
             const p = path.join(DATA_DIR, 'uploads', row.filepath.replace('/uploads/',''));
             if(fs.existsSync(p)) {
                 try {
                     const u = new URL(`${s.ntfy_url.replace(/\/$/,'')}/${s.ntfy_topic}`);
-                    u.searchParams.append('message', msg);
-                    u.searchParams.append('title', title);
                     u.searchParams.append('filename', `${type}_${id}.jpg`);
+                    u.searchParams.append('message', msg);
                     fetch(u.toString(), { method:'POST', body:fs.readFileSync(p) }).catch(()=>{});
                 } catch(e){}
             }
@@ -125,7 +123,6 @@ app.put('/api/user', auth, (req, res) => {
     db.run(q, p, (e)=>res.json({success:!e}));
 });
 
-// Settings
 app.get('/api/settings', auth, (req, res) => db.all(`SELECT * FROM settings`, [], (e,r)=>res.json(r?r.reduce((a,x)=>({...a,[x.key]:x.value}),{}):{})));
 app.put('/api/settings', auth, (req, res) => {
     db.serialize(()=>{
@@ -139,7 +136,6 @@ app.post('/api/settings/test', auth, (req, res) => {
     fetch(`${req.body.ntfy_url}/${req.body.ntfy_topic}`, {method:'POST', body:'Test'}).then(r=>res.json({success:r.ok})).catch(e=>res.status(500).json({error:e.message})); 
 });
 
-// Generic Handlers
 const getTable = (t) => (req, res) => db.all(`SELECT * FROM ${t}`, [], (e,r)=>res.json(r||[]));
 const delItem = (t) => (req, res) => {
     db.get(`SELECT filepath FROM ${t} WHERE id=?`,[req.params.id],(e,r)=>{
@@ -152,7 +148,6 @@ const postFile = (t) => (req, res) => {
     db.run(`INSERT INTO ${t} (filepath) VALUES (?)`, [`/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`], function(){res.json({id:this.lastID})});
 };
 
-// Sections & Headers
 app.get('/api/headers', auth, getTable('header_sections'));
 app.post('/api/headers', auth, (req, res) => db.run(`INSERT INTO header_sections (title) VALUES (?)`, [req.body.title], function(){res.json({id:this.lastID})}));
 app.delete('/api/headers/:id', auth, (req, res) => {
@@ -170,7 +165,6 @@ app.delete('/api/sections/:id', auth, (req, res) => {
     });
 });
 
-// Cards
 app.get('/api/cards', auth, getTable('cards'));
 app.post('/api/cards', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
@@ -189,7 +183,6 @@ app.post('/api/cards/:id/scratch', auth, (req, res) => {
 });
 app.get('/api/cards/:id/history', auth, (req, res) => db.all(`SELECT timestamp FROM card_history WHERE card_id=? ORDER BY timestamp DESC`, [req.params.id], (e,r)=>res.json(r||[])));
 
-// Books
 app.get('/api/books', auth, getTable('books'));
 app.post('/api/books', auth, upload.single('file'), (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
@@ -221,7 +214,6 @@ app.post('/api/books/:id/extract', auth, (req, res) => {
     });
 });
 
-// Dice & Extras
 app.get('/api/dice', auth, getTable('dice_options'));
 app.put('/api/dice', auth, (req, res) => {
     const { items, role } = req.body;
@@ -248,7 +240,6 @@ app.post('/api/fantasies/pull', auth, (req,res) => db.get(`SELECT * FROM fantasi
 app.post('/api/fantasies/:id/return', auth, (req,res) => db.run(`UPDATE fantasies SET pulled_at=NULL WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 app.delete('/api/fantasies/:id', auth, (req,res) => db.run(`DELETE FROM fantasies WHERE id=?`,[req.params.id], ()=>res.json({success:true})));
 
-// Galleries
 const gal = (t, sub) => {
     app.get(`/api/${t}`, auth, getTable(t));
     app.post(`/api/${t}`, auth, upload.single('file'), postFile(t));
@@ -264,21 +255,16 @@ gal('lingerie', 'lingerie');
 gal('condoms', 'condoms');
 gal('lubes', 'lubes');
 
-// Export
 app.get('/api/export', auth, (req, res) => {
     const ts = Date.now();
     const root = path.join('/tmp', `export_${ts}`);
-    fs.mkdirSync(path.join(root, 'data'), {recursive:true});
-    
-    // Copy Helper
+    fs.mkdirSync(path.join(root,'data'), {recursive:true});
     const cp = (src, dest) => {
         const s = path.join(DATA_DIR,'uploads',src.replace(/^\/uploads\//,''));
         const d = path.join(root,'data',dest);
-        const dir = path.dirname(d);
-        if(!fs.existsSync(dir)) fs.mkdirSync(dir, {recursive:true});
+        if(!fs.existsSync(path.dirname(d))) fs.mkdirSync(path.dirname(d), {recursive:true});
         if(fs.existsSync(s)) fs.copyFileSync(s, d);
     };
-
     db.serialize(() => {
         db.all(`SELECT c.filepath, s.title as sec, h.title as head FROM cards c LEFT JOIN sections s ON c.section_id=s.id LEFT JOIN header_sections h ON s.header_id=h.id`, [], (e,r)=>{
             if(r) r.forEach(x => {
@@ -286,18 +272,12 @@ app.get('/api/export', auth, (req, res) => {
                 cp(x.filepath, `Cards/${f}/${path.basename(x.filepath)}`);
             });
         });
-        ['books','toys','lingerie','condoms','lubes'].forEach(t => {
-            db.all(`SELECT filepath FROM ${t}`, [], (e,r)=>{ if(r) r.forEach(x=>cp(x.filepath, `${t}/${path.basename(x.filepath)}`)); });
-        });
-        
+        ['books','toys','lingerie','condoms','lubes'].forEach(t => db.all(`SELECT filepath FROM ${t}`, [], (e,r)=>{ if(r) r.forEach(x=>cp(x.filepath, `${t}/${path.basename(x.filepath)}`)); }));
         setTimeout(() => {
-            const zipName = `privy_backup_${ts}.zip`;
-            // Ensure we are inside /tmp before zipping to avoid full paths
-            exec(`cd /tmp && zip -r ${zipName} export_${ts}`, (err) => {
+            exec(`cd /tmp && zip -r export_${ts}.zip export_${ts}`, (err) => {
                 if(err) return res.status(500).json({error:'Zip failed'});
-                res.download(`/tmp/${zipName}`, zipName, () => {
-                    fs.rmSync(root, {recursive:true, force:true});
-                    try { fs.unlinkSync(`/tmp/${zipName}`); } catch(e){}
+                res.download(`/tmp/export_${ts}.zip`, 'backup.zip', ()=>{
+                    fs.rmSync(root, {recursive:true}); fs.unlinkSync(`/tmp/export_${ts}.zip`);
                 });
             });
         }, 3000);

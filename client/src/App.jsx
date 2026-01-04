@@ -58,7 +58,6 @@ const playSound = (type) => {
     } catch(e) {}
 };
 
-// --- Shared Components ---
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [revealed, setRevealed] = useState(false);
   const tap = useRef(0);
@@ -155,8 +154,6 @@ const BookItem = ({ book, onClick, onLongPress }) => {
     return ( <div {...lp} onClick={() => onClick(book)} className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex flex-col items-center justify-center gap-4 cursor-pointer text-center"><Book size={32} className="text-burgundy"/><h3 className="text-white truncate w-full">{book.title}</h3></div> );
 };
 
-// --- Pages ---
-
 const Auth = ({ setUser }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [form, setForm] = useState({ username: '', password: '', name: '', age: '', gender: '' });
@@ -248,11 +245,15 @@ const Protection = () => {
 };
 
 const Spin = () => {
-    const [data, setData] = useState({cards:[], sections:[], headers:[]});
+    const [cards, setCards] = useState([]);
+    const [sections, setSections] = useState([]);
+    const [headers, setHeaders] = useState([]);
     const [activeHeader, setActiveHeader] = useState(null);
     const [activeSection, setActiveSection] = useState(null);
-    const [spinState, setSpinState] = useState({ spinning:false, winner:null, rotation:0 });
-    const [history, setHistory] = useState(false);
+    const [rotation, setRotation] = useState(0);
+    const [isSpinning, setIsSpinning] = useState(false);
+    const [winner, setWinner] = useState(null); 
+    const [showHistory, setShowHistory] = useState(false);
 
     useEffect(() => {
         const load = async () => {
@@ -260,88 +261,54 @@ const Spin = () => {
             const [c, s, hd] = await Promise.all([safeFetch(`${API_URL}/cards`,{headers:h}), safeFetch(`${API_URL}/sections`,{headers:h}), safeFetch(`${API_URL}/headers`,{headers:h})]);
             setData({ cards: Array.isArray(c)?c:[], sections: Array.isArray(s)?s:[], headers: Array.isArray(hd)?hd:[] });
         };
+        const setData = (d) => { if(d.cards) setCards(d.cards); if(d.sections) setSections(d.sections); if(d.headers) setHeaders(d.headers); };
         load();
     }, []);
 
-    const sections = activeHeader ? data.sections.filter(s => s.header_id === activeHeader) : data.sections;
-    const cards = data.cards.filter(c => activeSection ? c.section_id === activeSection : true);
-
-    const spin = () => {
-        if(cards.length===0) return alert("No cards!");
-        setSpinState(p => ({...p, spinning:true, winner:null}));
-        const winIdx = Math.floor(Math.random() * cards.length);
-        const winner = cards[winIdx];
-        const rot = p => p + 1800 + Math.random()*360;
-        setSpinState(p => ({...p, rotation: rot(p.rotation)}));
-        setTimeout(() => {
-            setSpinState(p => ({...p, spinning:false, winner}));
-            safeFetch(`${API_URL}/cards/${winner.id}/scratch`, { method:'POST', headers:{Authorization:`Bearer ${localStorage.getItem('token')}`} });
-        }, 4000);
-    };
-
+    const filteredSections = activeHeader ? sections.filter(s => s.header_id === activeHeader) : sections; 
+    const wheelGradient = `conic-gradient(${Array.from({length: 16}).map((_, i) => `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`).join(', ')})`;
+    const handleSpin = () => { if (isSpinning) return; const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; }); if (pool.length === 0) { alert("No cards in this section!"); return; } setIsSpinning(true); setWinner(null); const winningIndex = Math.floor(Math.random() * 16); const winningCard = pool[Math.floor(Math.random() * pool.length)]; const segmentAngle = 360 / 16; const offset = (winningIndex * segmentAngle) + (segmentAngle / 2); const target = 360 - offset; let delta = target - (rotation % 360); if (delta < 0) delta += 360; const totalRotation = rotation + (5 * 360) + delta; setRotation(totalRotation); setTimeout(() => { setIsSpinning(false); setWinner(winningCard); safeFetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000); };
     return (
         <div className="flex flex-col items-center w-full min-h-full py-4 overflow-hidden">
             <div className="w-full overflow-x-auto whitespace-nowrap px-4 mb-2 no-scrollbar">
                 <button onClick={()=>setActiveHeader(null)} className={`mr-2 px-3 py-1 rounded-full border text-xs ${activeHeader===null?'bg-gold text-black':'text-gray-400 border-gray-600'}`}>All</button>
-                {data.headers.map(h => <button key={h.id} onClick={()=>setActiveHeader(h.id)} className={`mr-2 px-3 py-1 rounded-full border text-xs ${activeHeader===h.id?'bg-gold text-black':'text-gray-400 border-gray-600'}`}>{h.title}</button>)}
+                {headers.map(h => <button key={h.id} onClick={()=>setActiveHeader(h.id)} className={`mr-2 px-3 py-1 rounded-full border text-xs ${activeHeader===h.id?'bg-gold text-black':'text-gray-400 border-gray-600'}`}>{h.title}</button>)}
             </div>
             <div className="w-full overflow-x-auto whitespace-nowrap px-4 mb-4 no-scrollbar">
-                {sections.map(s => <button key={s.id} onClick={()=>setActiveSection(activeSection===s.id?null:s.id)} className={`mr-2 px-3 py-1 rounded-full border text-xs ${activeSection===s.id?'bg-red-600 text-white':'text-gray-400 border-gray-600'}`}>{s.title}</button>)}
+                {filteredSections.map(s => <button key={s.id} onClick={()=>setActiveSection(activeSection===s.id?null:s.id)} className={`mr-2 px-3 py-1 rounded-full border text-xs ${activeSection===s.id?'bg-red-600 text-white':'text-gray-400 border-gray-600'}`}>{s.title}</button>)}
             </div>
-            <div className="relative w-72 h-72 rounded-full border-4 border-gold overflow-hidden flex items-center justify-center transition-transform duration-[4000ms] ease-out" style={{transform: `rotate(${spinState.rotation}deg)`, background: 'conic-gradient(#800020 0deg 22.5deg, #111 22.5deg 45deg)'}}>
-               {/* Wheel segments visual simplified */}
+            <div className="relative w-72 h-72 rounded-full border-4 border-gold overflow-hidden flex items-center justify-center transition-transform duration-[4000ms] ease-out" style={{transform: `rotate(${rotation}deg)`, background: 'conic-gradient(#800020 0deg 22.5deg, #111 22.5deg 45deg)'}}>
                <div className="text-white font-bold">SPIN</div>
             </div>
-            <button onClick={spin} disabled={spinState.spinning} className="mt-8 px-8 py-3 bg-gold text-black font-bold rounded-full shadow-lg active:scale-95 transition">SPIN</button>
-            {spinState.winner && <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4">
-                <div className="relative w-full max-w-sm h-[60vh]"><img src={spinState.winner.filepath} className="w-full h-full object-contain"/><button onClick={()=>setSpinState(p=>({...p, winner:null}))} className="absolute top-0 right-0 p-2 bg-black text-white"><X/></button></div>
+            <button onClick={handleSpin} disabled={isSpinning} className="mt-8 px-8 py-3 bg-gold text-black font-bold rounded-full shadow-lg active:scale-95 transition">SPIN</button>
+            {winner && <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4">
+                <div className="relative w-full max-w-sm h-[60vh]"><img src={winner.filepath} className="w-full h-full object-contain"/><button onClick={()=>setWinner(null)} className="absolute top-0 right-0 p-2 bg-black text-white"><X/></button></div>
                 <div className="mt-4 flex gap-4"><button onClick={()=>setHistory(true)} className="text-gold flex gap-2 items-center"><Clock/> History</button></div>
-                {history && <div className="absolute inset-0 bg-gray-900"><HistoryList cardId={spinState.winner.id} onClose={()=>setHistory(false)}/></div>}
+                {showHistory && <div className="absolute inset-0 bg-gray-900"><HistoryList cardId={winner.id} onClose={()=>setHistory(false)}/></div>}
             </div>}
         </div>
     );
 };
 
 const DiceGame = () => {
-    const [data, setData] = useState([]);
+    const [acts, setActs] = useState([]);
+    const [locations, setLocations] = useState([]);
     const [result, setResult] = useState({ act:'?', loc:'?', time:'?' });
     const [rolling, setRolling] = useState(false);
     const [timeLeft, setTimeLeft] = useState(0);
     const [activeRole, setActiveRole] = useState('wife');
     const [edit, setEdit] = useState(false);
+    const [allOptions, setAllOptions] = useState([]);
 
-    useEffect(() => { safeFetch(`${API_URL}/dice`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(d => { if(Array.isArray(d)) setData(d); }); }, []);
+    useEffect(() => { safeFetch(`${API_URL}/dice`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(data => { if(Array.isArray(data)) setAllOptions(data); }); }, []);
+    useEffect(() => { const roleActs = allOptions.filter(d => d.type === 'act' && (d.role === activeRole || (!d.role && activeRole === 'wife'))); const roleLocs = allOptions.filter(d => d.type === 'location' && (d.role === activeRole || (!d.role && activeRole === 'wife'))); setActs(roleActs); setLocations(roleLocs); }, [allOptions, activeRole]);
+    const handleRoll = () => { if (rolling) return; setRolling(true); setTimeLeft(0); let steps = 0; const interval = setInterval(() => { const randomAct = acts.length ? acts[Math.floor(Math.random() * acts.length)].text : '?'; const randomLoc = locations.length ? locations[Math.floor(Math.random() * locations.length)].text : '?'; const randomTime = [10,15,30,45,60,'∞'][Math.floor(Math.random()*6)]; setResult({ act: randomAct, loc: randomLoc, time: randomTime }); steps++; if (steps > 20) { clearInterval(interval); setRolling(false); } }, 100); };
+    const startTimer = () => { if (result.time === '?' || result.time === '∞') return; initAudio(); playSound('ting'); setTimeLeft(parseInt(result.time)); };
+    const pauseTimer = () => {}; 
+    const stopTimer = () => { setTimeLeft(0); };
+    useEffect(() => { let interval = null; if (timeLeft > 0) interval = setInterval(() => setTimeLeft(t => t - 1), 1000); else if (timeLeft === 0 && !rolling) playSound('end'); return () => clearInterval(interval); }, [timeLeft]);
 
-    const roll = () => {
-        setRolling(true); setTimeLeft(0);
-        const acts = data.filter(d => d.type==='act' && (d.role===activeRole || !d.role));
-        const locs = data.filter(d => d.type==='location' && (d.role===activeRole || !d.role));
-        let c = 0;
-        const i = setInterval(() => {
-            setResult({
-                act: acts.length ? acts[Math.floor(Math.random()*acts.length)].text : '?',
-                loc: locs.length ? locs[Math.floor(Math.random()*locs.length)].text : '?',
-                time: [10,15,30,45,60,'∞'][Math.floor(Math.random()*6)]
-            });
-            c++;
-            if(c>20) { clearInterval(i); setRolling(false); }
-        }, 100);
-    };
-
-    const timer = () => {
-        if(result.time === '?' || result.time === '∞') return;
-        initAudio(); playSound('ting');
-        setTimeLeft(parseInt(result.time));
-    };
-
-    useEffect(() => {
-        let i;
-        if(timeLeft > 0) i = setInterval(() => setTimeLeft(t => t - 1), 1000);
-        else if (timeLeft === 0 && !rolling) playSound('end');
-        return () => clearInterval(i);
-    }, [timeLeft]);
-
-    if(edit) return <div className="p-4 text-white"><button onClick={()=>setEdit(false)}>Back</button><h1>Edit Dice ({activeRole})</h1><p>Use Desktop to edit for now.</p></div>;
+    if(edit) return <div className="p-4 text-white"><button onClick={()=>setEdit(false)}>Back</button><h1>Edit Dice ({activeRole})</h1><p>Edit functionality here...</p></div>;
 
     return (
         <div className="flex flex-col items-center pt-10 gap-6 w-full">
@@ -353,8 +320,8 @@ const DiceGame = () => {
             </div>
             {timeLeft > 0 && <div className="text-7xl font-mono text-red-500 font-bold">{timeLeft}</div>}
             <div className="flex gap-4">
-                {!rolling && result.time !== '?' && result.time !== '∞' && <button onClick={timer} className="p-4 rounded-full bg-green-600 text-white shadow-lg active:scale-95"><Play/></button>}
-                <button onClick={roll} disabled={rolling} className="px-8 py-3 bg-gold text-black font-bold rounded-full shadow-lg active:scale-95 transition">ROLL</button>
+                {!rolling && result.time !== '?' && result.time !== '∞' && <button onClick={startTimer} className="p-4 rounded-full bg-green-600 text-white shadow-lg active:scale-95"><Play/></button>}
+                <button onClick={handleRoll} disabled={rolling} className="px-8 py-3 bg-gold text-black font-bold rounded-full shadow-lg active:scale-95 transition">ROLL</button>
             </div>
             <button onClick={()=>setEdit(true)} className="text-gray-500 flex items-center gap-2"><Edit2 size={16}/> Edit</button>
         </div>
@@ -435,9 +402,8 @@ const Home = () => {
                 {filCards.map(c => <CardItem key={c.id} card={c} onDeleteRequest={setDeleteId} onClick={setSelectedCard} />)}
             </div>
 
-            {/* Modals */}
             {selectedCard && <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"><div className="relative h-[80%]"><img src={selectedCard.filepath} className="h-full object-contain"/><button onClick={()=>setSelectedCard(null)} className="absolute top-0 right-0 p-4 text-white"><X/></button></div></div>}
-            {deleteId && <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center"><p className="text-white mb-4">Delete Card?</p><button onClick={deleteCard} className="bg-red-600 text-white px-4 py-2 rounded">Yes</button><button onClick={()=>setDeleteId(null)} className="ml-4 text-gray-400">No</button></div></div>}
+            {deleteId && <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center"><p className="text-white mb-4">Delete?</p><button onClick={deleteCard} className="bg-red-600 text-white px-4 py-2 rounded">Yes</button><button onClick={()=>setDeleteId(null)} className="ml-4 text-gray-400">No</button></div></div>}
             {headerMenu && <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center"><p className="text-white mb-4">Delete Category "{headerMenu.title}"?</p><button onClick={deleteHeader} className="bg-red-600 text-white px-4 py-2 rounded">Delete</button><button onClick={()=>setHeaderMenu(null)} className="ml-4 text-gray-400">Cancel</button></div></div>}
             {sectionMenu && !moveTarget && <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded text-center flex flex-col gap-4"><h3 className="text-gold text-xl">{sectionMenu.title}</h3><button onClick={()=>setMoveTarget(true)} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 justify-center"><Grid/> Move to Category</button><button onClick={deleteSection} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2 justify-center"><Trash2/> Delete Section</button><button onClick={()=>setSectionMenu(null)} className="text-gray-400">Cancel</button></div></div>}
             {moveTarget && <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"><div className="bg-gray-800 p-6 rounded w-64 max-h-[80vh] overflow-y-auto"><h3 className="text-white mb-4">Move to...</h3><button onClick={()=>moveSection(null)} className="w-full text-left p-2 border-b border-gray-600 text-gray-300">Unsorted</button>{headers.map(h=><button key={h.id} onClick={()=>moveSection(h.id)} className="w-full text-left p-2 border-b border-gray-600 text-gold">{h.title}</button>)}<button onClick={()=>setMoveTarget(null)} className="mt-4 text-gray-400 w-full">Cancel</button></div></div>}
@@ -480,18 +446,18 @@ const Layout = ({ children, user, logout }) => {
 
 export default function App() {
   const [user, setUser] = useState(null);
-  useEffect(() => { try { const u = JSON.parse(localStorage.getItem('user')); if(u) setUser(u); } catch(e){} }, []);
-  const logout = () => { localStorage.clear(); setUser(null); };
-  return (<ErrorBoundary>{!user ? <Auth setUser={setUser}/> : <Router><Layout user={user} logout={logout}><Routes>
-      <Route path="/" element={<Home/>}/>
-      <Route path="/spin" element={<Spin/>}/>
-      <Route path="/dice" element={<DiceGame/>}/>
-      <Route path="/extras" element={<Extras/>}/>
-      <Route path="/books" element={<Books/>}/>
-      <Route path="/toys" element={<Gallery title="Toys" endpoint="toys" icon={<Zap size={32}/>}/>}/>
-      <Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<Shirt size={32}/>}/>}/>
-      <Route path="/protection" element={<Protection/>}/>
-      <Route path="/settings" element={<Settings user={user} logout={logout}/>}/>
-      <Route path="/notifications" element={<Notifications/>}/>
-  </Routes></Layout></Router>}</ErrorBoundary>);
+  useEffect(() => { try { const saved = localStorage.getItem('user'); if (saved) setUser(JSON.parse(saved)); } catch (e) { localStorage.clear(); } }, []);
+  const logout = () => { localStorage.removeItem('token'); localStorage.removeItem('user'); setUser(null); };
+  return (<ErrorBoundary>{!user ? (<Auth setUser={setUser} />) : (<Router><Layout user={user} logout={logout}><Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/spin" element={<Spin />} />
+      <Route path="/dice" element={<DiceGame />} />
+      <Route path="/extras" element={<Extras />} />
+      <Route path="/books" element={<Books />} />
+      <Route path="/toys" element={<Gallery title="Toys" endpoint="toys" icon={<Zap size={32}/>} />} />
+      <Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<Shirt size={32}/>} />} />
+      <Route path="/protection" element={<Protection />} />
+      <Route path="/settings" element={<Settings user={user} logout={logout} />} />
+      <Route path="/notifications" element={<Notifications />} />
+  </Routes></Layout></Router>)}</ErrorBoundary>);
 }
