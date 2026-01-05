@@ -394,12 +394,13 @@ const CalendarView = () => {
     );
 };
 
-const Gallery = ({ title, endpoint, icon }) => {
+const Gallery = ({ title, endpoint, icon, useRoles = false }) => {
     const [items, setItems] = useState([]);
     const [winner, setWinner] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [deleteId, setDeleteId] = useState(null);
+    const [activeRole, setActiveRole] = useState('wife'); // Default role for sections
 
     const fetchItems = useCallback(() => {
         safeFetch(`${API_URL}/${endpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
@@ -414,22 +415,25 @@ const Gallery = ({ title, endpoint, icon }) => {
         for (const file of files) {
             const formData = new FormData();
             formData.append('file', file);
+            if (useRoles) formData.append('role', activeRole);
             await safeFetch(`${API_URL}/${endpoint}`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: formData });
         }
         fetchItems();
     };
 
+    const displayItems = useRoles ? items.filter(i => (i.role || 'wife') === activeRole) : items;
+
     const handleDraw = () => {
-        if(items.length === 0) return alert("Upload images first!");
+        if(displayItems.length === 0) return alert("Upload images first!");
         setIsDrawing(true);
         setWinner(null);
         let counter = 0;
         const interval = setInterval(() => {
-            setWinner(items[Math.floor(Math.random() * items.length)]);
+            setWinner(displayItems[Math.floor(Math.random() * displayItems.length)]);
             counter++;
             if(counter > 20) {
                 clearInterval(interval);
-                const final = items[Math.floor(Math.random() * items.length)];
+                const final = displayItems[Math.floor(Math.random() * displayItems.length)];
                 setWinner(final);
                 setIsDrawing(false);
                 safeFetch(`${API_URL}/${endpoint}/${final.id}/draw`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
@@ -447,6 +451,14 @@ const Gallery = ({ title, endpoint, icon }) => {
     return (
         <div className="p-4 pb-24 flex flex-col items-center min-h-screen w-full">
             <h2 className="text-gold text-3xl mb-6 flex items-center gap-2 w-full justify-start">{icon} {title}</h2>
+
+            {useRoles && (
+                <div className="flex bg-gray-900 rounded-full p-1 mb-6 border border-gold/30">
+                    <button onClick={() => setActiveRole('wife')} className={`px-6 py-2 rounded-full transition ${activeRole === 'wife' ? 'bg-burgundy text-white font-bold' : 'text-gray-400'}`}>Wife</button>
+                    <button onClick={() => setActiveRole('husband')} className={`px-6 py-2 rounded-full transition ${activeRole === 'husband' ? 'bg-eggplant text-white font-bold' : 'text-gray-400'}`}>Husband</button>
+                </div>
+            )}
+
             {winner ? (
                  <div className="relative w-full max-w-sm aspect-[3/4] border-4 border-gold rounded-xl overflow-hidden shadow-2xl mb-8 animate-fadeIn">
                      <img src={winner.filepath} className="w-full h-full object-cover" />
@@ -454,9 +466,9 @@ const Gallery = ({ title, endpoint, icon }) => {
                      {!isDrawing && <button onClick={() => setWinner(null)} className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-full"><X/></button>}
                  </div>
             ) : (
-                <button onClick={handleDraw} disabled={isDrawing || items.length === 0} className="w-full max-w-sm aspect-video bg-gray-900 border-2 border-dashed border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-500 mb-8 hover:border-gold hover:text-gold transition active:scale-95">
+                <button onClick={handleDraw} disabled={isDrawing || displayItems.length === 0} className="w-full max-w-sm aspect-video bg-gray-900 border-2 border-dashed border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-500 mb-8 hover:border-gold hover:text-gold transition active:scale-95">
                     {isDrawing ? <RefreshCw className="animate-spin mb-2" size={40}/> : <Shuffle className="mb-2" size={40}/>}
-                    <span className="text-xl font-bold">{items.length > 0 ? "TAP TO DRAW" : "Empty Collection"}</span>
+                    <span className="text-xl font-bold">{displayItems.length > 0 ? "TAP TO DRAW" : "Empty Collection"}</span>
                 </button>
             )}
             <div className="w-full flex justify-end mb-4">
@@ -465,7 +477,7 @@ const Gallery = ({ title, endpoint, icon }) => {
             {isEditing && (
                 <div className="w-full grid grid-cols-3 gap-2 animate-fadeIn">
                     <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40"><Plus className="text-burgundy"/><span className="text-xs text-burgundy mt-1">Add</span><input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} /></label>
-                    {items.map(item => (<GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />))}
+                    {displayItems.map(item => (<GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />))}
                 </div>
             )}
             {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Item?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
@@ -869,7 +881,7 @@ export default function App() {
       <Route path="/extras" element={<Extras />} />
       <Route path="/books" element={<Books />} />
       <Route path="/toys" element={<Gallery title="Toys" endpoint="toys" icon={<Zap size={32}/>} />} />
-      <Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<Shirt size={32}/>} />} />
+      <Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<Shirt size={32}/>} useRoles={true} />} />
       <Route path="/protection" element={<Protection />} />
       <Route path="/settings" element={<Settings user={user} logout={logout} />} />
       <Route path="/notifications" element={<Notifications />} />

@@ -39,7 +39,7 @@ db.serialize(() => {
 
     // Galleries
     db.run(`CREATE TABLE IF NOT EXISTS toys (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
-    db.run(`CREATE TABLE IF NOT EXISTS lingerie (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
+    db.run(`CREATE TABLE IF NOT EXISTS lingerie (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0, role TEXT DEFAULT 'wife')`);
     db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
 
@@ -50,6 +50,7 @@ db.serialize(() => {
     const runMigration = (sql) => { try { db.run(sql, () => {}); } catch (e) {} };
     runMigration(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`);
     runMigration(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`);
+    runMigration(`ALTER TABLE lingerie ADD COLUMN role TEXT DEFAULT 'wife'`);
 });
 
 const sendNtfy = (id, type='card') => {
@@ -154,7 +155,12 @@ const delItem = (t) => (req, res) => {
 };
 const postFile = (t) => (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
-    db.run(`INSERT INTO ${t} (filepath) VALUES (?)`, [`/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`], function(){res.json({id:this.lastID})});
+    // Added specific handling for Lingerie roles
+    if (t === 'lingerie') {
+         db.run(`INSERT INTO ${t} (filepath, role) VALUES (?,?)`, [`/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`, req.body.role || 'wife'], function(){res.json({id:this.lastID})});
+    } else {
+         db.run(`INSERT INTO ${t} (filepath) VALUES (?)`, [`/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`], function(){res.json({id:this.lastID})});
+    }
 };
 
 // Sections
