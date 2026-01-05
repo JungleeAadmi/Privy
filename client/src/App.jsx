@@ -279,10 +279,27 @@ const BookItem = ({ book, onClick, onLongPress }) => {
 };
 
 const GalleryItem = ({ item, onDeleteRequest }) => {
-    const longPressProps = useLongPress(() => onDeleteRequest(item.id), 800);
+    // Replaced long press with double tap to avoid browser context menu
+    const lastTap = useRef(0);
+    const handleDoubleTap = (e) => {
+        e.preventDefault();
+        const now = Date.now();
+        if (now - lastTap.current < 300 && now - lastTap.current > 0) {
+            onDeleteRequest(item.id);
+        }
+        lastTap.current = now;
+    };
+
     return (
-      <div {...longPressProps} className="relative aspect-square bg-gray-900 rounded-lg overflow-hidden border border-gold/30">
-          <img src={item.filepath} alt="Item" className="w-full h-full object-cover" />
+      <div 
+        onClick={handleDoubleTap}
+        onContextMenu={(e) => e.preventDefault()} // Block right-click menu
+        className="relative aspect-square bg-gray-900 rounded-lg overflow-hidden border border-gold/30 cursor-pointer group"
+      >
+          <img src={item.filepath} alt={item.name} className="w-full h-full object-cover" />
+          <div className="absolute bottom-0 left-0 w-full bg-black/70 p-1 text-center">
+              <span className="text-white text-xs truncate block">{item.name || "Item"}</span>
+          </div>
       </div>
     );
 };
@@ -401,6 +418,7 @@ const Gallery = ({ title, endpoint, icon, useRoles = false }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [deleteId, setDeleteId] = useState(null);
     const [activeRole, setActiveRole] = useState('wife'); // Default role for sections
+    const [newItemName, setNewItemName] = useState("");
 
     const fetchItems = useCallback(() => {
         safeFetch(`${API_URL}/${endpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
@@ -415,9 +433,11 @@ const Gallery = ({ title, endpoint, icon, useRoles = false }) => {
         for (const file of files) {
             const formData = new FormData();
             formData.append('file', file);
+            if (newItemName.trim()) formData.append('name', newItemName);
             if (useRoles) formData.append('role', activeRole);
             await safeFetch(`${API_URL}/${endpoint}`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, body: formData });
         }
+        setNewItemName("");
         fetchItems();
     };
 
@@ -461,8 +481,11 @@ const Gallery = ({ title, endpoint, icon, useRoles = false }) => {
 
             <div className="flex-1 flex flex-col items-center justify-center w-full mb-8">
                 {winner ? (
-                     <div className="relative w-full max-w-sm aspect-[3/4] border-4 border-gold rounded-xl overflow-hidden shadow-2xl animate-fadeIn">
+                     <div className="relative w-full max-w-sm aspect-[3/4] border-4 border-gold rounded-xl overflow-hidden shadow-2xl animate-fadeIn bg-black">
                          <img src={winner.filepath} className="w-full h-full object-cover" />
+                         <div className="absolute bottom-0 left-0 w-full bg-black/70 p-3 text-center">
+                             <h3 className="text-gold text-2xl font-caveat">{winner.name || "Chosen Item"}</h3>
+                         </div>
                          {isDrawing && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><span className="text-gold text-xl animate-pulse">Shuffling...</span></div>}
                          {!isDrawing && <button onClick={() => setWinner(null)} className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-full"><X/></button>}
                      </div>
@@ -478,9 +501,14 @@ const Gallery = ({ title, endpoint, icon, useRoles = false }) => {
                 <button onClick={() => setIsEditing(!isEditing)} className={`flex items-center gap-2 px-4 py-2 rounded-full border transition ${isEditing ? 'bg-gold text-black border-gold' : 'bg-transparent text-gray-400 border-gray-700'}`}><Edit2 size={16}/> {isEditing ? 'Done' : 'Manage'}</button>
             </div>
             {isEditing && (
-                <div className="w-full grid grid-cols-3 gap-2 animate-fadeIn">
-                    <label className="aspect-square bg-burgundy/20 border-2 border-dashed border-burgundy rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-burgundy/40"><Plus className="text-burgundy"/><span className="text-xs text-burgundy mt-1">Add</span><input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} /></label>
-                    {displayItems.map(item => (<GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />))}
+                <div className="w-full flex flex-col gap-4 animate-fadeIn">
+                    <div className="flex gap-2 bg-gray-900 p-2 rounded-lg border border-gray-700">
+                        <input className="flex-1 bg-black border border-gray-600 rounded p-2 text-white" placeholder="Name (Optional)" value={newItemName} onChange={e => setNewItemName(e.target.value)} />
+                        <label className="flex items-center justify-center gap-2 bg-burgundy px-4 rounded cursor-pointer hover:bg-lipstick transition"><Upload size={18}/><span className="hidden sm:inline">Upload</span><input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} /></label>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                        {displayItems.map(item => (<GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />))}
+                    </div>
                 </div>
             )}
             {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Item?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}

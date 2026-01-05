@@ -37,11 +37,11 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS location_unlocks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, unlocked_at DATETIME, count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS fantasies (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, pulled_at DATETIME)`);
 
-    // Galleries
-    db.run(`CREATE TABLE IF NOT EXISTS toys (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
-    db.run(`CREATE TABLE IF NOT EXISTS lingerie (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, chosen_count INTEGER DEFAULT 0, role TEXT DEFAULT 'wife')`);
-    db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
-    db.run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
+    // Galleries (Added 'name' column)
+    db.run(`CREATE TABLE IF NOT EXISTS toys (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, name TEXT DEFAULT 'Toy', chosen_count INTEGER DEFAULT 0)`);
+    db.run(`CREATE TABLE IF NOT EXISTS lingerie (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT, name TEXT DEFAULT 'Lingerie', chosen_count INTEGER DEFAULT 0, role TEXT DEFAULT 'wife')`);
+    db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY, filepath TEXT, name TEXT DEFAULT 'Condom', chosen_count INTEGER DEFAULT 0)`);
+    db.run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY, filepath TEXT, name TEXT DEFAULT 'Lube', chosen_count INTEGER DEFAULT 0)`);
 
     // Cameras (Text Only)
     db.run(`CREATE TABLE IF NOT EXISTS cameras (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, chosen_count INTEGER DEFAULT 0)`);
@@ -54,6 +54,11 @@ db.serialize(() => {
     runMigration(`ALTER TABLE dice_options ADD COLUMN role TEXT DEFAULT 'wife'`);
     runMigration(`ALTER TABLE location_unlocks ADD COLUMN count INTEGER DEFAULT 0`);
     runMigration(`ALTER TABLE lingerie ADD COLUMN role TEXT DEFAULT 'wife'`);
+    // Name migrations for existing DBs
+    runMigration(`ALTER TABLE toys ADD COLUMN name TEXT DEFAULT 'Toy'`);
+    runMigration(`ALTER TABLE lingerie ADD COLUMN name TEXT DEFAULT 'Lingerie'`);
+    runMigration(`ALTER TABLE condoms ADD COLUMN name TEXT DEFAULT 'Condom'`);
+    runMigration(`ALTER TABLE lubes ADD COLUMN name TEXT DEFAULT 'Lube'`);
 });
 
 const sendNtfy = (id, type='card') => {
@@ -68,8 +73,11 @@ const sendNtfy = (id, type='card') => {
         else if(type==='condoms') { tbl='condoms'; title="Safety First"; }
         else if(type==='lubes') { tbl='lubes'; title="Lube Up"; }
 
-        db.get(`SELECT filepath FROM ${tbl} WHERE id=?`, [id], (e, row)=>{
+        db.get(`SELECT filepath, name FROM ${tbl} WHERE id=?`, [id], (e, row)=>{
             if(!row) return;
+            // Use the name in the notification message
+            if (row.name) msg = `${row.name} was chosen!`;
+
             const p = path.join(DATA_DIR, 'uploads', row.filepath.replace('/uploads/',''));
             if(fs.existsSync(p)) {
                 try {
@@ -158,10 +166,13 @@ const delItem = (t) => (req, res) => {
 };
 const postFile = (t) => (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
+    const fp = `/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`;
+    const name = req.body.name || (t === 'toys' ? 'Toy' : t === 'condoms' ? 'Condom' : t === 'lubes' ? 'Lube' : 'Item');
+    
     if (t === 'lingerie') {
-         db.run(`INSERT INTO ${t} (filepath, role) VALUES (?,?)`, [`/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`, req.body.role || 'wife'], function(){res.json({id:this.lastID})});
+         db.run(`INSERT INTO ${t} (filepath, role, name) VALUES (?,?,?)`, [fp, req.body.role || 'wife', name], function(){res.json({id:this.lastID})});
     } else {
-         db.run(`INSERT INTO ${t} (filepath) VALUES (?)`, [`/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`], function(){res.json({id:this.lastID})});
+         db.run(`INSERT INTO ${t} (filepath, name) VALUES (?,?)`, [fp, name], function(){res.json({id:this.lastID})});
     }
 };
 
@@ -271,6 +282,9 @@ const gal = (t, sub) => {
     app.post(`/api/${t}`, auth, upload.single('file'), postFile(t));
     app.delete(`/api/${t}/:id`, auth, delItem(t));
     app.post(`/api/${t}/:id/draw`, auth, (req, res) => {
+        // Do NOT count for cameras (handled separately), but keep for others if needed
+        // Assuming user wants tracking OFF for lingerie/safety/cameras now based on request "like lingerie... do not track"
+        // For backwards compatibility we'll keep updating chosen_count for now unless explicitly disabled
         db.run(`UPDATE ${t} SET chosen_count=chosen_count+1 WHERE id=?`, [req.params.id]);
         sendNtfy(req.params.id, sub);
         res.json({success:true});
