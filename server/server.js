@@ -43,6 +43,9 @@ db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS condoms (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
     db.run(`CREATE TABLE IF NOT EXISTS lubes (id INTEGER PRIMARY KEY, filepath TEXT, chosen_count INTEGER DEFAULT 0)`);
 
+    // Cameras (Text Only)
+    db.run(`CREATE TABLE IF NOT EXISTS cameras (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, chosen_count INTEGER DEFAULT 0)`);
+
     // Calendar
     db.run(`CREATE TABLE IF NOT EXISTS calendar_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, text TEXT)`);
 
@@ -149,13 +152,12 @@ app.delete('/api/calendar/:id', auth, (req, res) => db.run('DELETE FROM calendar
 const getTable = (t) => (req, res) => db.all(`SELECT * FROM ${t}`, [], (e,r)=>res.json(r||[]));
 const delItem = (t) => (req, res) => {
     db.get(`SELECT filepath FROM ${t} WHERE id=?`,[req.params.id],(e,r)=>{
-        if(r) try { fs.unlinkSync(path.join(DATA_DIR, 'uploads', r.filepath.replace('/uploads/',''))); } catch(e){}
+        if(r && r.filepath) try { fs.unlinkSync(path.join(DATA_DIR, 'uploads', r.filepath.replace('/uploads/',''))); } catch(e){}
         db.run(`DELETE FROM ${t} WHERE id=?`,[req.params.id], ()=>res.json({success:true}));
     });
 };
 const postFile = (t) => (req, res) => {
     if(!req.file) return res.status(400).json({error:'No file'});
-    // Added specific handling for Lingerie roles
     if (t === 'lingerie') {
          db.run(`INSERT INTO ${t} (filepath, role) VALUES (?,?)`, [`/uploads/${req.file.destination.split('/').pop()}/${req.file.filename}`, req.body.role || 'wife'], function(){res.json({id:this.lastID})});
     } else {
@@ -238,6 +240,15 @@ app.put('/api/dice', auth, (req, res) => {
     });
 });
 
+// Cameras (Text Based)
+app.get('/api/cameras', auth, getTable('cameras'));
+app.post('/api/cameras', auth, (req, res) => db.run(`INSERT INTO cameras (name) VALUES (?)`, [req.body.name], function(){res.json({id:this.lastID})}));
+app.delete('/api/cameras/:id', auth, (req, res) => db.run(`DELETE FROM cameras WHERE id=?`, [req.params.id], ()=>res.json({success:true})));
+app.post('/api/cameras/:id/draw', auth, (req, res) => {
+    db.run(`UPDATE cameras SET chosen_count=chosen_count+1 WHERE id=?`, [req.params.id]);
+    res.json({success:true});
+});
+
 // Locations
 app.get('/api/locations', auth, getTable('location_unlocks'));
 app.post('/api/locations', auth, (req,res) => db.run(`INSERT INTO location_unlocks (name) VALUES (?)`,[req.body.name], function(){res.json({id:this.lastID})}));
@@ -272,10 +283,10 @@ gal('lubes', 'lubes');
 
 app.post('/api/reset-app', auth, (req, res) => {
     db.serialize(() => {
-        ['card_history','cards','location_unlocks','toys','lingerie','condoms','lubes'].forEach(t => {
+        ['card_history','cards','location_unlocks','toys','lingerie','condoms','lubes', 'cameras'].forEach(t => {
             const f = t==='card_history' ? 'DELETE FROM' : 'UPDATE';
             const s = t==='card_history' ? '' : t==='location_unlocks' ? 'SET count=0, unlocked_at=NULL' : 'SET scratched_count=0';
-            const w = t==='toys' || t==='lingerie' || t==='condoms' || t==='lubes' ? 'SET chosen_count=0' : s;
+            const w = t==='toys' || t==='lingerie' || t==='condoms' || t==='lubes' || t==='cameras' ? 'SET chosen_count=0' : s;
             db.run(`${f} ${t} ${w}`);
         });
         res.json({success:true});

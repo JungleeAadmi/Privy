@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar as CalIcon, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, ChevronLeft, ChevronRight, Lock, Unlock } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar as CalIcon, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, ChevronLeft, ChevronRight, Lock, Unlock, Camera } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -498,6 +498,129 @@ const Protection = () => {
     );
 };
 
+const CameraSelector = () => {
+    const [cameras, setCameras] = useState([]);
+    const [newCam, setNewCam] = useState("");
+    const [winners, setWinners] = useState(null);
+    const [isRolling, setIsRolling] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+
+    const fetchCameras = () => safeFetch(`${API_URL}/cameras`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(d => { if(Array.isArray(d)) setCameras(d); });
+    
+    useEffect(() => { fetchCameras(); }, []);
+
+    const handleAdd = async () => {
+        if(!newCam.trim()) return;
+        await safeFetch(`${API_URL}/cameras`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ name: newCam }) });
+        setNewCam("");
+        fetchCameras();
+    };
+
+    const handleDelete = async (id) => {
+        if(!confirm("Delete this camera?")) return;
+        await safeFetch(`${API_URL}/cameras/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+        fetchCameras();
+    };
+
+    const handleShuffle = async () => {
+        if (cameras.length === 0) return;
+        setIsRolling(true);
+        setWinners(null);
+        
+        // Animation
+        let count = 0;
+        const interval = setInterval(() => {
+            const r = Math.floor(Math.random() * cameras.length);
+            setWinners([cameras[r]]); // Show 1 during shuffle
+            count++;
+            if (count > 15) {
+                clearInterval(interval);
+                finalizeDraw();
+            }
+        }, 100);
+    };
+
+    const finalizeDraw = async () => {
+        // Logic: 20% chance to pick 2 cameras if we have at least 2
+        const pickCount = (cameras.length >= 2 && Math.random() > 0.8) ? 2 : 1;
+        
+        // Shuffle array copy
+        const shuffled = [...cameras].sort(() => 0.5 - Math.random());
+        const selected = shuffled.slice(0, pickCount);
+        
+        setWinners(selected);
+        setIsRolling(false);
+
+        // Update counts
+        for (const cam of selected) {
+            await safeFetch(`${API_URL}/cameras/${cam.id}/draw`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+        }
+    };
+
+    return (
+        <div className="p-4 pb-24 flex flex-col items-center min-h-screen w-full">
+            <h2 className="text-gold text-3xl mb-6 flex items-center gap-2 w-full justify-start"><Camera size={32}/> Cameras</h2>
+            
+            <div className="w-full max-w-sm flex-1 flex flex-col items-center justify-center mb-8">
+                {winners ? (
+                    <div className="bg-gray-900 border-4 border-gold rounded-xl p-8 w-full text-center animate-fadeIn shadow-[0_0_30px_rgba(255,215,0,0.3)]">
+                        <h3 className="text-gray-400 text-sm uppercase tracking-widest mb-4">Selected Camera{winners.length > 1 ? 's' : ''}</h3>
+                        <div className="space-y-4">
+                            {winners.map(w => (
+                                <div key={w.id} className="text-3xl text-white font-bold font-caveat">{w.name}</div>
+                            ))}
+                        </div>
+                        {!isRolling && (
+                            <button onClick={() => setWinners(null)} className="mt-8 text-sm text-gray-500 hover:text-white">Clear Selection</button>
+                        )}
+                    </div>
+                ) : (
+                    <button onClick={handleShuffle} disabled={isRolling || cameras.length === 0} className="w-full aspect-video bg-gray-900 border-2 border-dashed border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-500 hover:border-gold hover:text-gold transition active:scale-95">
+                        <Shuffle size={48} className={`mb-2 ${isRolling ? 'animate-spin' : ''}`}/>
+                        <span className="text-2xl font-bold">{cameras.length > 0 ? "PICK CAMERA" : "Add Cameras First"}</span>
+                    </button>
+                )}
+            </div>
+
+            <div className="w-full max-w-sm">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-white">Your Cameras</h3>
+                    <button onClick={() => setIsEditing(!isEditing)} className="text-gold text-sm">{isEditing ? 'Done' : 'Manage'}</button>
+                </div>
+                
+                {isEditing ? (
+                    <div className="space-y-2 animate-fadeIn">
+                        <div className="flex gap-2 mb-4">
+                            <input 
+                                className="flex-1 bg-black border border-gray-700 rounded p-2 text-white" 
+                                placeholder="Camera name (e.g. Sony A7, iPhone)" 
+                                value={newCam} 
+                                onChange={e => setNewCam(e.target.value)} 
+                            />
+                            <button onClick={handleAdd} className="bg-gold text-black px-4 rounded font-bold">Add</button>
+                        </div>
+                        {cameras.map(cam => (
+                            <div key={cam.id} className="flex justify-between items-center bg-gray-800 p-3 rounded">
+                                <span className="text-white">{cam.name}</span>
+                                <button onClick={() => handleDelete(cam.id)} className="text-red-500"><Trash2 size={16}/></button>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                        {cameras.map(cam => (
+                            <div key={cam.id} className="bg-gray-800/50 p-3 rounded border border-gray-700 text-center">
+                                <span className="text-gray-300">{cam.name}</span>
+                                {cam.chosen_count > 0 && <span className="block text-xs text-gold mt-1">{cam.chosen_count}x</span>}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const Spin = () => {
     const [cards, setCards] = useState([]);
     const [sections, setSections] = useState([]);
@@ -809,6 +932,7 @@ const Layout = ({ children, user, logout }) => {
         {[
             {p:'/',i:<Layers/>,l:'Cards'},{p:'/spin',i:<Aperture/>,l:'Spin'},{p:'/dice',i:<Dices/>,l:'Dice'},
             {p:'/extras',i:<Sparkles/>,l:'Extras'},{p:'/books',i:<Book/>,l:'Books'},{p:'/toys',i:<Zap/>,l:'Toys'},
+            {p:'/cameras',i:<Camera/>,l:'Cams'},
             {p:'/lingerie',i:<Shirt/>,l:'Lingerie'},{p:'/protection',i:<Shield/>,l:'Safety'},{p:'/calendar',i:<CalIcon/>,l:'Calendar'}
         ].map(x=><Link key={x.p} to={x.p} className={`flex flex-col items-center min-w-[50px] ${location.pathname===x.p?'text-lipstick':'text-gray-500'}`}>{x.i}<span className="text-xs">{x.l}</span></Link>)}
       </nav>
@@ -881,6 +1005,7 @@ export default function App() {
       <Route path="/extras" element={<Extras />} />
       <Route path="/books" element={<Books />} />
       <Route path="/toys" element={<Gallery title="Toys" endpoint="toys" icon={<Zap size={32}/>} />} />
+      <Route path="/cameras" element={<CameraSelector />} />
       <Route path="/lingerie" element={<Gallery title="Lingerie" endpoint="lingerie" icon={<Shirt size={32}/>} useRoles={true} />} />
       <Route path="/protection" element={<Protection />} />
       <Route path="/settings" element={<Settings user={user} logout={logout} />} />
