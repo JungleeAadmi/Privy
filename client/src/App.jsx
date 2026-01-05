@@ -584,36 +584,29 @@ const CameraSelector = () => {
 
             <div className="w-full max-w-sm">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-white">Your Cameras</h3>
-                    <button onClick={() => setIsEditing(!isEditing)} className="text-gold text-sm">{isEditing ? 'Done' : 'Manage'}</button>
+                    <button onClick={() => setIsEditing(!isEditing)} className="text-gold text-sm border border-gold/50 rounded-full px-3 py-1 hover:bg-gold hover:text-black transition ml-auto">{isEditing ? 'Done' : 'Manage Cameras'}</button>
                 </div>
                 
-                {isEditing ? (
-                    <div className="space-y-2 animate-fadeIn">
+                {isEditing && (
+                    <div className="space-y-2 animate-fadeIn bg-gray-900/50 p-4 rounded-xl border border-gray-700">
+                        <h3 className="text-white text-sm mb-2">Add New Camera</h3>
                         <div className="flex gap-2 mb-4">
                             <input 
                                 className="flex-1 bg-black border border-gray-700 rounded p-2 text-white" 
-                                placeholder="Camera name (e.g. Sony A7, iPhone)" 
+                                placeholder="Camera name..." 
                                 value={newCam} 
                                 onChange={e => setNewCam(e.target.value)} 
                             />
                             <button onClick={handleAdd} className="bg-gold text-black px-4 rounded font-bold">Add</button>
                         </div>
-                        {cameras.map(cam => (
-                            <div key={cam.id} className="flex justify-between items-center bg-gray-800 p-3 rounded">
-                                <span className="text-white">{cam.name}</span>
-                                <button onClick={() => handleDelete(cam.id)} className="text-red-500"><Trash2 size={16}/></button>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                        {cameras.map(cam => (
-                            <div key={cam.id} className="bg-gray-800/50 p-3 rounded border border-gray-700 text-center">
-                                <span className="text-gray-300">{cam.name}</span>
-                                {cam.chosen_count > 0 && <span className="block text-xs text-gold mt-1">{cam.chosen_count}x</span>}
-                            </div>
-                        ))}
+                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                            {cameras.map(cam => (
+                                <div key={cam.id} className="flex justify-between items-center bg-gray-800 p-3 rounded border border-gray-700">
+                                    <span className="text-white">{cam.name}</span>
+                                    <button onClick={() => handleDelete(cam.id)} className="text-red-500 hover:bg-red-900/20 p-2 rounded"><Trash2 size={16}/></button>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>

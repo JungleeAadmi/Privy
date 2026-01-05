@@ -245,7 +245,7 @@ app.get('/api/cameras', auth, getTable('cameras'));
 app.post('/api/cameras', auth, (req, res) => db.run(`INSERT INTO cameras (name) VALUES (?)`, [req.body.name], function(){res.json({id:this.lastID})}));
 app.delete('/api/cameras/:id', auth, (req, res) => db.run(`DELETE FROM cameras WHERE id=?`, [req.params.id], ()=>res.json({success:true})));
 app.post('/api/cameras/:id/draw', auth, (req, res) => {
-    db.run(`UPDATE cameras SET chosen_count=chosen_count+1 WHERE id=?`, [req.params.id]);
+    // No counting logic here as requested
     res.json({success:true});
 });
 
