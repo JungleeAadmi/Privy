@@ -459,18 +459,21 @@ const Gallery = ({ title, endpoint, icon, useRoles = false }) => {
                 </div>
             )}
 
-            {winner ? (
-                 <div className="relative w-full max-w-sm aspect-[3/4] border-4 border-gold rounded-xl overflow-hidden shadow-2xl mb-8 animate-fadeIn">
-                     <img src={winner.filepath} className="w-full h-full object-cover" />
-                     {isDrawing && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><span className="text-gold text-xl animate-pulse">Shuffling...</span></div>}
-                     {!isDrawing && <button onClick={() => setWinner(null)} className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-full"><X/></button>}
-                 </div>
-            ) : (
-                <button onClick={handleDraw} disabled={isDrawing || displayItems.length === 0} className="w-full max-w-sm aspect-video bg-gray-900 border-2 border-dashed border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-500 mb-8 hover:border-gold hover:text-gold transition active:scale-95">
-                    {isDrawing ? <RefreshCw className="animate-spin mb-2" size={40}/> : <Shuffle className="mb-2" size={40}/>}
-                    <span className="text-xl font-bold">{displayItems.length > 0 ? "TAP TO DRAW" : "Empty Collection"}</span>
-                </button>
-            )}
+            <div className="flex-1 flex flex-col items-center justify-center w-full mb-8">
+                {winner ? (
+                     <div className="relative w-full max-w-sm aspect-[3/4] border-4 border-gold rounded-xl overflow-hidden shadow-2xl animate-fadeIn">
+                         <img src={winner.filepath} className="w-full h-full object-cover" />
+                         {isDrawing && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><span className="text-gold text-xl animate-pulse">Shuffling...</span></div>}
+                         {!isDrawing && <button onClick={() => setWinner(null)} className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-full"><X/></button>}
+                     </div>
+                ) : (
+                    <button onClick={handleDraw} disabled={isDrawing || displayItems.length === 0} className="w-full max-w-sm aspect-video bg-gray-900 border-2 border-dashed border-gray-700 rounded-xl flex flex-col items-center justify-center text-gray-500 hover:border-gold hover:text-gold transition active:scale-95">
+                        {isDrawing ? <RefreshCw className="animate-spin mb-2" size={40}/> : <Shuffle className="mb-2" size={40}/>}
+                        <span className="text-xl font-bold">{displayItems.length > 0 ? "TAP TO DRAW" : "Empty Collection"}</span>
+                    </button>
+                )}
+            </div>
+
             <div className="w-full flex justify-end mb-4">
                 <button onClick={() => setIsEditing(!isEditing)} className={`flex items-center gap-2 px-4 py-2 rounded-full border transition ${isEditing ? 'bg-gold text-black border-gold' : 'bg-transparent text-gray-400 border-gray-700'}`}><Edit2 size={16}/> {isEditing ? 'Done' : 'Manage'}</button>
             </div>
