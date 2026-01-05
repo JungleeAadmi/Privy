@@ -289,6 +289,10 @@ const gal = (t, sub) => {
         sendNtfy(req.params.id, sub);
         res.json({success:true});
     });
+    // Add RENAME endpoint
+    app.put(`/api/${t}/:id`, auth, (req, res) => {
+        db.run(`UPDATE ${t} SET name=? WHERE id=?`, [req.body.name, req.params.id], ()=>res.json({success:true}));
+    });
 };
 gal('toys', 'toy');
 gal('lingerie', 'lingerie');

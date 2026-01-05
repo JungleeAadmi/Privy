@@ -278,14 +278,13 @@ const BookItem = ({ book, onClick, onLongPress }) => {
     return ( <div {...longPressProps} onClick={() => onClick(book)} className="bg-gray-900 border border-gold/20 p-6 rounded-lg hover:bg-gray-800 transition flex items-center gap-4 cursor-pointer shadow-md group select-none"><Book size={32} className="text-burgundy group-hover:text-lipstick transition-colors"/><div className="overflow-hidden"><h3 className="text-xl text-white truncate w-full">{book.title}</h3><p className="text-gray-500 text-sm group-hover:text-gold">Tap to read</p></div></div> );
 };
 
-const GalleryItem = ({ item, onDeleteRequest }) => {
-    // Replaced long press with double tap to avoid browser context menu
+const GalleryItem = ({ item, onOptionsRequest }) => {
     const lastTap = useRef(0);
     const handleDoubleTap = (e) => {
         e.preventDefault();
         const now = Date.now();
         if (now - lastTap.current < 300 && now - lastTap.current > 0) {
-            onDeleteRequest(item.id);
+            onOptionsRequest(item);
         }
         lastTap.current = now;
     };
@@ -293,8 +292,8 @@ const GalleryItem = ({ item, onDeleteRequest }) => {
     return (
       <div 
         onClick={handleDoubleTap}
-        onContextMenu={(e) => e.preventDefault()} // Block right-click menu
-        className="relative aspect-square bg-gray-900 rounded-lg overflow-hidden border border-gold/30 cursor-pointer group"
+        onContextMenu={(e) => e.preventDefault()} 
+        className="relative aspect-square bg-gray-900 rounded-lg overflow-hidden border border-gold/30 cursor-pointer group select-none"
       >
           <img src={item.filepath} alt={item.name} className="w-full h-full object-cover" />
           <div className="absolute bottom-0 left-0 w-full bg-black/70 p-1 text-center">
@@ -416,9 +415,11 @@ const Gallery = ({ title, endpoint, icon, useRoles = false }) => {
     const [winner, setWinner] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
-    const [deleteId, setDeleteId] = useState(null);
+    const [menuTarget, setMenuTarget] = useState(null);
     const [activeRole, setActiveRole] = useState('wife'); // Default role for sections
     const [newItemName, setNewItemName] = useState("");
+    const [editName, setEditName] = useState("");
+    const [isRenaming, setIsRenaming] = useState(false);
 
     const fetchItems = useCallback(() => {
         safeFetch(`${API_URL}/${endpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
@@ -462,9 +463,17 @@ const Gallery = ({ title, endpoint, icon, useRoles = false }) => {
     };
 
     const handleDelete = async () => {
-        if(!deleteId) return;
-        await safeFetch(`${API_URL}/${endpoint}/${deleteId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
-        setDeleteId(null);
+        if(!menuTarget) return;
+        await safeFetch(`${API_URL}/${endpoint}/${menuTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+        setMenuTarget(null);
+        fetchItems();
+    };
+
+    const handleRename = async () => {
+        if (!menuTarget || !editName.trim()) return;
+        await safeFetch(`${API_URL}/${endpoint}/${menuTarget.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ name: editName }) });
+        setMenuTarget(null);
+        setIsRenaming(false);
         fetchItems();
     };
 
@@ -507,11 +516,46 @@ const Gallery = ({ title, endpoint, icon, useRoles = false }) => {
                         <label className="flex items-center justify-center gap-2 bg-burgundy px-4 rounded cursor-pointer hover:bg-lipstick transition"><Upload size={18}/><span className="hidden sm:inline">Upload</span><input type="file" className="hidden" multiple accept="image/*" onChange={handleUpload} /></label>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
-                        {displayItems.map(item => (<GalleryItem key={item.id} item={item} onDeleteRequest={setDeleteId} />))}
+                        {displayItems.map(item => (<GalleryItem key={item.id} item={item} onOptionsRequest={(itm) => { setMenuTarget(itm); setEditName(itm.name || ""); setIsRenaming(false); }} />))}
                     </div>
                 </div>
             )}
-            {deleteId && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Item?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteId(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
+            
+            {/* Options Menu Modal for Double Tap */}
+            {menuTarget && (
+                <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+                    <div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-72 text-center shadow-2xl animate-fadeIn">
+                        <h3 className="text-gold text-xl mb-4 truncate">{menuTarget.name || "Item Options"}</h3>
+                        
+                        {isRenaming ? (
+                            <div className="space-y-4">
+                                <input 
+                                    autoFocus 
+                                    className="w-full p-2 bg-black border border-gold rounded text-white" 
+                                    value={editName} 
+                                    onChange={(e) => setEditName(e.target.value)} 
+                                />
+                                <div className="flex justify-center gap-2">
+                                    <button onClick={() => setIsRenaming(false)} className="px-3 py-2 rounded bg-gray-700 text-white text-sm">Cancel</button>
+                                    <button onClick={handleRename} className="px-3 py-2 rounded bg-gold text-black text-sm font-bold">Save</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col gap-3">
+                                <button onClick={() => setIsRenaming(true)} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-white w-full">
+                                    <Edit2 size={18} /> Rename
+                                </button>
+                                <button onClick={handleDelete} className="flex items-center justify-center gap-2 p-3 rounded bg-red-900/50 hover:bg-red-900 text-white w-full">
+                                    <Trash2 size={18} /> Delete
+                                </button>
+                                <button onClick={() => setMenuTarget(null)} className="p-2 mt-2 rounded text-gray-400 hover:text-white text-sm">
+                                    Cancel
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
