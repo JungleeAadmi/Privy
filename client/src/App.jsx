@@ -13,6 +13,7 @@ const safeFetch = async (url, options = {}) => {
   } catch (e) { console.error(e); return null; }
 };
 
+// --- Error Boundary ---
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -39,6 +40,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// --- Hooks ---
 const useLongPress = (callback = () => {}, ms = 800) => {
   const [startLongPress, setStartLongPress] = useState(false);
   useEffect(() => {
@@ -53,10 +55,11 @@ const useLongPress = (callback = () => {}, ms = 800) => {
     onTouchStart: () => setStartLongPress(true),
     onTouchEnd: () => setStartLongPress(false),
     onTouchCancel: () => setStartLongPress(false),
-    onContextMenu: (e) => e.preventDefault() // Prevents context menu on long press
+    onContextMenu: (e) => e.preventDefault()
   };
 };
 
+// --- Audio ---
 let audioCtx = null;
 const initAudio = () => {
     if (!audioCtx) {
@@ -90,19 +93,20 @@ const playSound = (type) => {
     } catch(e) { console.warn("Audio error", e); }
 };
 
+// --- Global Sub-Components ---
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
   const tapTimer = useRef(null);
+  useEffect(() => { setIsRevealed(false); tapCount.current = 0; }, [image]);
   const handleInteraction = () => {
     if (tapTimer.current) clearTimeout(tapTimer.current);
     tapCount.current += 1;
-    if (tapCount.current === 3) { if (!isRevealed) { setIsRevealed(true); onRevealComplete(id); } tapCount.current = 0; } 
-    else { timer.current = setTimeout(() => { tapCount.current = 0; }, 400); }
+    if (tapCount.current === 3) { if (!isRevealed) { setIsRevealed(true); onRevealComplete(id); } tapCount.current = 0; } else { tapTimer.current = setTimeout(() => { tapCount.current = 0; }, 400); }
   };
   return (
     <div className="relative w-full h-full bg-black select-none overflow-hidden flex items-center justify-center" onClick={handleInteraction}>
-      <img src={image} className="max-w-full max-h-full object-contain pointer-events-none" />
+      <img src={image} alt="Secret" className="max-w-full max-h-full object-contain pointer-events-none" />
       {!isRevealed && (<div className="absolute inset-0 z-10 flex items-center justify-center p-4" style={{ backgroundImage: `conic-gradient(#301934 0.25turn, #000 0.25turn 0.5turn, #301934 0.5turn 0.75turn, #000 0.75turn)`, backgroundSize: '50px 50px', backgroundPosition: 'top left' }}><div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl border-2 border-gold/50 shadow-lg animate-pulse select-none pointer-events-none"><span className="text-gold font-caveat text-3xl drop-shadow-md">Triple Tap</span></div></div>)}
     </div>
   );
@@ -117,10 +121,12 @@ const HistoryList = ({ cardId, onClose }) => {
       .then(d => { if(mounted) { setHistory(Array.isArray(d) ? d : []); setLoading(false); } });
     return () => { mounted = false; };
   }, [cardId]);
+  const formatDate = (ts) => { try { const date = new Date(ts.endsWith('Z') ? ts : ts + 'Z'); if (isNaN(date.getTime())) return "Unknown"; return date.toLocaleDateString(); } catch { return "Error"; } };
+  const formatTime = (ts) => { try { const date = new Date(ts.endsWith('Z') ? ts : ts + 'Z'); if (isNaN(date.getTime())) return "--:--"; return date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); } catch { return "--:--"; } };
   return (
     <div className="w-full h-full bg-gray-900 p-4 overflow-y-auto animate-fadeIn">
        <div className="flex justify-between items-center mb-4 border-b border-gold/30 pb-2"><h3 className="text-gold text-xl flex items-center gap-2"><Clock size={18}/> History</h3><button onClick={onClose} className="p-1 rounded-full hover:bg-white/10 text-gold"><X size={24}/></button></div>
-       {loading ? <p className="text-gray-400">Loading...</p> : history.length === 0 ? <p className="text-gray-400 text-center mt-10">No history yet.</p> : (<ul className="space-y-3">{history.map((h, i) => (<li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm"><span className="text-white flex items-center gap-2"><Calendar size={14} className="text-burgundy"/> {new Date(h.timestamp).toLocaleDateString()}</span><span className="text-gold font-mono">{new Date(h.timestamp).toLocaleTimeString()}</span></li>))}</ul>)}
+       {loading ? <p className="text-gray-400">Loading...</p> : history.length === 0 ? <p className="text-gray-400 text-center mt-10">No history yet.</p> : (<ul className="space-y-3">{history.map((h, i) => (<li key={i} className="bg-white/5 p-3 rounded flex items-center justify-between text-sm"><span className="text-white flex items-center gap-2"><Calendar size={14} className="text-burgundy"/> {formatDate(h.timestamp)}</span><span className="text-gold font-mono">{formatTime(h.timestamp)}</span></li>))}</ul>)}
     </div>
   );
 };
@@ -129,7 +135,7 @@ const PDFViewer = ({ url, title, bookId, onClose }) => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [progressText, setProgressText] = useState("");
   const handleExtract = async () => {
-    if (!confirm("Extract all images from this book into a new card section?")) return;
+    if (!confirm("Extract all images?")) return;
     setIsExtracting(true); setProgressText("Initializing...");
     const intervals = [setTimeout(() => setProgressText("Scanning..."), 2000), setTimeout(() => setProgressText("Extracting..."), 5000), setTimeout(() => setProgressText("Filtering..."), 8000), setTimeout(() => setProgressText("Creating cards..."), 10000)];
     try {
@@ -421,12 +427,13 @@ const Spin = () => {
         fetchData();
     }, []);
 
+    const filteredSections = sections;
     const wheelGradient = `conic-gradient(${Array.from({length: 16}).map((_, i) => `${i % 2 === 0 ? '#800020' : '#111'} ${i * 22.5}deg ${(i + 1) * 22.5}deg`).join(', ')})`;
     const handleSpin = () => { if (isSpinning) return; const pool = cards.filter(c => { if (activeSection === null) return c.section_id == null; return c.section_id === activeSection; }); if (pool.length === 0) { alert("No cards in this section!"); return; } setIsSpinning(true); setWinner(null); const winningIndex = Math.floor(Math.random() * 16); const winningCard = pool[Math.floor(Math.random() * pool.length)]; const segmentAngle = 360 / 16; const offset = (winningIndex * segmentAngle) + (segmentAngle / 2); const target = 360 - offset; let delta = target - (rotation % 360); if (delta < 0) delta += 360; const totalRotation = rotation + (5 * 360) + delta; setRotation(totalRotation); setTimeout(() => { setIsSpinning(false); setWinner(winningCard); safeFetch(`${API_URL}/cards/${winningCard.id}/scratch`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); }, 4000); };
     return (
         <div className="flex flex-col items-center w-full min-h-full py-4">
             <div className="w-full flex gap-2 overflow-x-auto p-2 pb-4 mb-8 no-scrollbar justify-center shrink-0">
-                {sections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={null} />))}
+                {filteredSections.map(s => (<SectionTab key={s.id} section={s} activeSection={activeSection} setActiveSection={setActiveSection} onLongPress={null} />))}
             </div>
             <div className="relative w-80 h-80 shrink-0">
                 <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[15px] border-l-transparent border-r-[15px] border-r-transparent border-t-[30px] border-t-lipstick drop-shadow-lg"></div>
@@ -464,13 +471,19 @@ const DiceGame = () => {
         setTimerActive(true); 
         setTimerPaused(false); 
     };
+
     const pauseTimer = () => { setTimerPaused(true); setTimerActive(false); };
+    
     const stopTimer = () => { setTimerActive(false); setTimerPaused(false); setTimeLeft(0); };
     
     useEffect(() => { 
         let interval = null; 
-        if (timerActive && !timerPaused && timeLeft > 0) interval = setInterval(() => setTimeLeft(prev => prev - 1), 1000); 
-        else if (timerActive && timeLeft === 0) { playSound('end'); setTimerActive(false); } 
+        if (timerActive && !timerPaused && timeLeft > 0) 
+            interval = setInterval(() => setTimeLeft(prev => prev - 1), 1000); 
+        else if (timerActive && timeLeft === 0) { 
+            playSound('end'); 
+            setTimerActive(false); 
+        } 
         return () => clearInterval(interval); 
     }, [timerActive, timerPaused, timeLeft]);
 
@@ -516,6 +529,52 @@ const DiceGame = () => {
             </div>
             <button onClick={handleRoll} disabled={rolling || timerActive} className="px-12 py-4 bg-gold text-black font-black text-2xl rounded-full shadow-[0_0_20px_#FFD700] active:scale-95 transition disabled:opacity-50">ROLL</button>
             <button onClick={() => setIsEditing(true)} className="text-gray-500 flex items-center gap-2 mt-4"><Edit2 size={16} /> Edit Dice ({activeRole})</button>
+        </div>
+    );
+};
+
+const LocationUnlocks = () => {
+    const [locations, setLocations] = useState([]);
+    const [newLoc, setNewLoc] = useState("");
+    const [menuTarget, setMenuTarget] = useState(null);
+    const fetchLocs = () => { safeFetch(`${API_URL}/locations`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(data => { if(Array.isArray(data)) setLocations(data); }).catch(console.error); };
+    useEffect(() => { fetchLocs(); }, []);
+    const toggleLoc = async (id) => { await safeFetch(`${API_URL}/locations/${id}/toggle`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ increment: true }) }); fetchLocs(); };
+    const addLoc = async () => { if(!newLoc) return; const res = await safeFetch(`${API_URL}/locations`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ name: newLoc }) }); if(res) { fetchLocs(); setNewLoc(""); } };
+    const deleteLoc = async () => { if(!menuTarget) return; await safeFetch(`${API_URL}/locations/${menuTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
+    const resetLoc = async () => { if(!menuTarget) return; await safeFetch(`${API_URL}/locations/${menuTarget.id}/reset`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setMenuTarget(null); fetchLocs(); };
+    return (
+        <div>
+            <h2 className="text-gold text-3xl mb-6 flex items-center gap-2"><MapPin/> Locations</h2>
+            <div className="grid grid-cols-1 gap-3 mb-6">{locations.map(loc => <LocationItem key={loc.id} loc={loc} onToggle={toggleLoc} onDeleteRequest={setMenuTarget} />)}</div>
+            <div className="flex gap-2"><input className="flex-1 bg-black border border-gray-600 rounded p-3 text-white" placeholder="Add custom location..." value={newLoc} onChange={e => setNewLoc(e.target.value)} /><button onClick={addLoc} className="bg-gray-800 text-gold p-3 rounded hover:bg-gray-700"><Plus/></button></div>
+            {menuTarget && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><h3 className="text-white text-xl mb-4 truncate">{menuTarget.name}</h3><div className="flex flex-col gap-3"><button onClick={resetLoc} className="flex items-center justify-center gap-2 p-3 rounded bg-gray-800 hover:bg-gray-700 text-gold w-full"><RotateCcw size={18}/> Reset Count</button><button onClick={deleteLoc} className="flex items-center justify-center gap-2 p-3 rounded bg-red-900/50 hover:bg-red-900 text-white w-full"><Trash2 size={18}/> Delete</button><button onClick={() => setMenuTarget(null)} className="p-2 mt-2 rounded text-gray-400 hover:text-white text-sm">Cancel</button></div></div></div>)}
+        </div>
+    );
+};
+
+const FantasyJar = () => {
+    const [wish, setWish] = useState("");
+    const [pulled, setPulled] = useState(null);
+    const [unpulledCount, setUnpulledCount] = useState(0); 
+    const [history, setHistory] = useState([]);
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const fetchData = () => {
+        safeFetch(`${API_URL}/fantasies`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(data => { if(Array.isArray(data)) setUnpulledCount(data.length); });
+        safeFetch(`${API_URL}/fantasies/history`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(data => { if(Array.isArray(data)) setHistory(data); });
+    };
+    useEffect(() => { fetchData(); }, []);
+    const handleDrop = async () => { if(!wish.trim()) return; await safeFetch(`${API_URL}/fantasies`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ text: wish }) }); setWish(""); alert("Wish dropped in the jar! 🤫"); fetchData(); };
+    const handlePull = async () => { const data = await safeFetch(`${API_URL}/fantasies/pull`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); if(data && data.empty) { alert("The jar is empty! Add more fantasies."); } else if(data) { setPulled(data.text); fetchData(); } };
+    const handleReturn = async (id) => { await safeFetch(`${API_URL}/fantasies/${id}/return`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); fetchData(); };
+    const handleDelete = async () => { if (!deleteTarget) return; await safeFetch(`${API_URL}/fantasies/${deleteTarget.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); setDeleteTarget(null); fetchData(); };
+    return (
+        <div className="flex flex-col items-center justify-center gap-8">
+            <h2 className="text-gold text-3xl font-caveat">The Fantasy Jar</h2>
+            {pulled ? (<div className="bg-white/10 p-8 rounded-xl border-2 border-gold text-center animate-fadeIn w-full max-w-sm"><Sparkles className="text-gold mx-auto mb-4" size={40} /><p className="text-3xl text-white font-caveat">{pulled}</p><button onClick={() => setPulled(null)} className="mt-6 text-gray-400 text-sm underline">Put away</button></div>) : (<div onClick={handlePull} className="relative w-40 h-56 cursor-pointer group"><div className="absolute -top-2 left-1/2 -translate-x-1/2 w-32 h-6 bg-gold rounded-sm shadow-md z-20"></div><div className="w-full h-full bg-white/5 border-4 border-gray-600 rounded-b-[3rem] rounded-t-lg backdrop-blur-sm flex items-center justify-center shadow-[0_0_30px_rgba(0,0,0,0.5)] group-hover:border-gold transition-all relative overflow-hidden">{unpulledCount > 0 ? (<div className="absolute bottom-0 w-full h-3/4 flex flex-wrap content-end justify-center gap-1 p-2 opacity-70">{Array.from({length: Math.min(unpulledCount, 15)}).map((_, i) => (<div key={i} className="w-8 h-8 bg-white/20 border border-white/40 rotate-12 rounded-sm" style={{transform: `rotate(${Math.random()*90}deg)`}}></div>))}</div>) : (<span className="text-gray-600 font-bold z-10">EMPTY</span>)}<span className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gold font-caveat text-3xl drop-shadow-md z-20 whitespace-nowrap ${unpulledCount === 0 ? 'hidden' : ''}`}>Tap to Pull</span></div></div>)}
+            <div className="w-full max-w-sm mt-4"><textarea className="w-full bg-black border border-gray-700 rounded p-4 text-white mb-2 focus:border-burgundy outline-none" placeholder="Whisper a fantasy..." value={wish} onChange={e => setWish(e.target.value)} /><button onClick={handleDrop} className="w-full bg-burgundy text-white py-3 rounded font-bold hover:bg-red-800 transition">Drop in Jar</button></div>
+            {history.length > 0 && (<div className="w-full max-w-sm mt-8"><h3 className="text-gray-500 text-sm uppercase tracking-widest mb-4">Pulled Memories</h3><div className="space-y-3">{history.map(item => (<HistoryItem key={item.id} item={item} onReturn={handleReturn} onDeleteRequest={setDeleteTarget} />))}</div></div>)}
+            {deleteTarget && (<div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"><div className="bg-gray-900 border border-burgundy p-6 rounded-xl w-64 text-center"><Trash2 size={40} className="mx-auto text-lipstick mb-4" /><h3 className="text-white text-xl mb-4">Delete Memory?</h3><div className="flex justify-center gap-4"><button onClick={() => setDeleteTarget(null)} className="px-4 py-2 rounded bg-gray-700 text-white">Cancel</button><button onClick={handleDelete} className="px-4 py-2 rounded bg-lipstick text-white">Delete</button></div></div></div>)}
         </div>
     );
 };
