@@ -127,7 +127,9 @@ app.get('/api/settings', auth, (req, res) => db.all(`SELECT * FROM settings`, []
 app.put('/api/settings', auth, (req, res) => {
     db.serialize(()=>{
         const s = db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)`);
-        if(req.body.ntfy_url) { s.run('ntfy_url', req.body.ntfy_url); s.run('ntfy_topic', req.body.ntfy_topic); }
+        if(req.body.ntfy_url !== undefined) s.run('ntfy_url', req.body.ntfy_url);
+        if(req.body.ntfy_topic !== undefined) s.run('ntfy_topic', req.body.ntfy_topic);
+        if(req.body.app_pin !== undefined) s.run('app_pin', req.body.app_pin);
         s.finalize();
         res.json({success:true});
     });

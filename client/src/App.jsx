@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar as CalIcon, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Menu, X, User, LogOut, Upload, Book, Layers, Shuffle, Heart, Maximize2, Clock, Calendar as CalIcon, Trash2, Edit2, Plus, Folder, RefreshCw, Bell, Send, Aperture, RotateCcw, AlertTriangle, Scissors, Dices, MapPin, Sparkles, Timer, Play, Pause, CheckCircle, RotateCw, Square, Zap, Shirt, Shield, ChevronLeft, ChevronRight, Lock, Unlock } from 'lucide-react';
 
 const API_URL = '/api';
 
@@ -94,6 +94,87 @@ const playSound = (type) => {
 };
 
 // --- Global Sub-Components ---
+const PinPad = ({ mode = 'unlock', targetPin, onComplete, onCancel, title }) => {
+  const [input, setInput] = useState("");
+  const [confirm, setConfirm] = useState(null);
+  const [error, setError] = useState("");
+
+  const handleNum = (n) => {
+    setError("");
+    if (input.length < 4) {
+      const next = input + n;
+      setInput(next);
+      if (next.length === 4) {
+        setTimeout(() => handleSubmit(next), 200);
+      }
+    }
+  };
+
+  const handleBackspace = () => {
+    setInput(prev => prev.slice(0, -1));
+    setError("");
+  };
+
+  const handleSubmit = (val) => {
+    if (mode === 'unlock' || mode === 'verify') {
+      if (val === targetPin) {
+        onComplete(val);
+      } else {
+        setError("Incorrect PIN");
+        setInput("");
+      }
+    } else if (mode === 'setup') {
+      if (!confirm) {
+        setConfirm(val);
+        setInput("");
+      } else {
+        if (val === confirm) {
+          onComplete(val);
+        } else {
+          setError("PINs do not match. Try again.");
+          setInput("");
+          setConfirm(null);
+        }
+      }
+    }
+  };
+
+  const getTitle = () => {
+    if (title) return title;
+    if (mode === 'unlock') return "Enter PIN to Unlock";
+    if (mode === 'verify') return "Verify PIN to Disable";
+    if (mode === 'setup') return confirm ? "Confirm PIN" : "Create 4-Digit PIN";
+    return "Privy Lock";
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-6 animate-fadeIn">
+       <Lock size={48} className="text-gold mb-6" />
+       <h2 className="text-2xl text-gold mb-2 font-bold">{getTitle()}</h2>
+       {error && <p className="text-red-500 mb-4 animate-pulse">{error}</p>}
+       
+       <div className="flex gap-4 mb-8">
+         {[0,1,2,3].map(i => (
+           <div key={i} className={`w-4 h-4 rounded-full border-2 border-gold transition-all duration-200 ${input.length > i ? 'bg-gold' : 'bg-transparent'}`} />
+         ))}
+       </div>
+
+       <div className="grid grid-cols-3 gap-6 w-full max-w-[280px]">
+         {[1,2,3,4,5,6,7,8,9].map(n => (
+           <button key={n} onClick={() => handleNum(n.toString())} className="w-16 h-16 rounded-full bg-gray-900 border border-gray-700 text-white text-2xl font-bold active:bg-gold active:text-black transition shadow-lg">{n}</button>
+         ))}
+         <div className="flex items-center justify-center">
+             {onCancel && <button onClick={onCancel} className="text-gray-500 hover:text-white text-sm">Cancel</button>}
+         </div>
+         <button onClick={() => handleNum('0')} className="w-16 h-16 rounded-full bg-gray-900 border border-gray-700 text-white text-2xl font-bold active:bg-gold active:text-black transition shadow-lg">0</button>
+         <div className="flex items-center justify-center">
+             <button onClick={handleBackspace} className="text-white hover:text-red-400"><ChevronLeft size={32}/></button>
+         </div>
+       </div>
+    </div>
+  );
+};
+
 const RevealCard = ({ image, id, onRevealComplete }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const tapCount = useRef(0);
@@ -622,13 +703,95 @@ const Layout = ({ children, user, logout }) => {
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetStep, setResetStep] = useState(1);
   const [resetInput, setResetInput] = useState("");
+  const [appSettings, setAppSettings] = useState({});
+  const [isLocked, setIsLocked] = useState(false);
+  const [pinMode, setPinMode] = useState(null); // 'setup', 'verify'
+
+  // Load Settings on Mount
+  useEffect(() => {
+    safeFetch(`${API_URL}/settings`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+      .then(s => {
+        setAppSettings(s || {});
+        // Lock immediately if PIN is set
+        if (s && s.app_pin) setIsLocked(true);
+      });
+  }, []);
+
+  // Handle Visibility Change (Minimize/Reopen)
+  useEffect(() => {
+    const handleVis = () => {
+      // If returning to app and PIN exists, lock it
+      if (document.visibilityState === 'visible' && appSettings.app_pin) {
+        setIsLocked(true);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVis);
+    return () => document.removeEventListener("visibilitychange", handleVis);
+  }, [appSettings.app_pin]);
+
   const handleReload = async () => { if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (const registration of registrations) await registration.unregister(); } window.location.reload(true); };
   const handleResetSubmit = async () => { if (resetInput !== 'RESET') { alert("Please type 'RESET' exactly."); return; } if (resetStep === 1) { setResetStep(2); setResetInput(""); } else { await safeFetch(`${API_URL}/reset-app`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }); alert("App has been reset."); setShowResetModal(false); setResetStep(1); setResetInput(""); handleReload(); } };
   
+  const updatePin = async (newPin) => {
+      const res = await safeFetch(`${API_URL}/settings`, { 
+          method: 'PUT', 
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, 
+          body: JSON.stringify({ app_pin: newPin }) 
+      });
+      if (res && res.success) {
+          setAppSettings(prev => ({ ...prev, app_pin: newPin }));
+          setPinMode(null);
+          alert(newPin ? "App Lock Enabled" : "App Lock Disabled");
+      }
+  };
+
   return (
     <div className="fixed inset-0 w-full h-full bg-black text-white font-caveat selection:bg-lipstick flex flex-col overflow-hidden">
+      {/* PIN LOCK SCREEN OVERLAY */}
+      {isLocked && appSettings.app_pin && (
+          <PinPad 
+            mode="unlock" 
+            targetPin={appSettings.app_pin} 
+            onComplete={() => setIsLocked(false)} 
+          />
+      )}
+
+      {/* PIN SETUP/VERIFY MODAL */}
+      {pinMode === 'setup' && (
+          <PinPad 
+             mode="setup" 
+             onComplete={(pin) => updatePin(pin)} 
+             onCancel={() => setPinMode(null)} 
+          />
+      )}
+      {pinMode === 'verify' && (
+          <PinPad 
+             mode="verify" 
+             targetPin={appSettings.app_pin}
+             onComplete={() => updatePin("")} // Clear PIN on success
+             onCancel={() => setPinMode(null)} 
+          />
+      )}
+
       <header className="flex-none w-full bg-gradient-to-r from-eggplant to-black border-b border-gold/20 z-50 px-4 py-2 flex justify-between items-center shadow-lg"><div className="flex items-center gap-3"><img src="/apple-touch-icon.png" alt="Logo" className="w-10 h-10 rounded-full border border-gold shadow-md" /><div className="flex flex-col"><h1 className="text-2xl text-gold tracking-widest leading-none">Privy</h1><span className="text-xl text-gray-400 -mt-1">@{user?.username}</span></div></div><div className="flex items-center gap-4"><button onClick={handleReload} className="text-gold/80 hover:text-gold focus:outline-none active:rotate-180 transition-transform duration-500"><RefreshCw size={24} /></button><button onClick={() => setMenuOpen(!menuOpen)} className="text-gold focus:outline-none">{menuOpen ? <X size={28} /> : <div className="space-y-1"><div className="w-6 h-0.5 bg-gold"></div><div className="w-6 h-0.5 bg-gold"></div><div className="w-6 h-0.5 bg-gold"></div></div>}</button></div></header>
-      {menuOpen && (<div className="absolute top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-50 p-4 shadow-2xl transform transition-transform"><div className="flex flex-col gap-4 text-xl"><Link to="/settings" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><User size={20}/> Profile</Link><Link to="/notifications" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><Bell size={20}/> Notifications</Link><div className="my-2 border-t border-gray-700"></div><button onClick={() => { setShowResetModal(true); setMenuOpen(false); }} className="flex items-center gap-3 p-2 text-red-400 hover:bg-white/10 rounded"><RotateCcw size={20}/> Reset App</button><button onClick={logout} className="flex items-center gap-3 p-2 text-lipstick hover:bg-white/10 rounded"><LogOut size={20}/> Logout</button></div></div>)}
+      {menuOpen && (<div className="absolute top-14 right-0 w-64 bg-gray-900 border-l border-gold/30 h-full z-50 p-4 shadow-2xl transform transition-transform">
+          <div className="flex flex-col gap-4 text-xl">
+              <Link to="/settings" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><User size={20}/> Profile</Link>
+              <Link to="/notifications" onClick={() => setMenuOpen(false)} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold"><Bell size={20}/> Notifications</Link>
+              
+              <button 
+                onClick={() => { setMenuOpen(false); setPinMode(appSettings.app_pin ? 'verify' : 'setup'); }} 
+                className="flex items-center gap-3 p-2 hover:bg-white/10 rounded text-gold w-full text-left"
+              >
+                {appSettings.app_pin ? <Unlock size={20}/> : <Lock size={20}/>} 
+                {appSettings.app_pin ? "Disable App Lock" : "Enable App Lock"}
+              </button>
+
+              <div className="my-2 border-t border-gray-700"></div>
+              <button onClick={() => { setShowResetModal(true); setMenuOpen(false); }} className="flex items-center gap-3 p-2 text-red-400 hover:bg-white/10 rounded"><RotateCcw size={20}/> Reset App</button>
+              <button onClick={logout} className="flex items-center gap-3 p-2 text-lipstick hover:bg-white/10 rounded"><LogOut size={20}/> Logout</button>
+          </div>
+      </div>)}
       <main className="flex-1 overflow-y-auto bg-gradient-to-b from-black via-eggplant/20 to-black relative w-full">{children}</main>
       <nav className="flex-none w-full bg-black/90 backdrop-blur-md border-t border-gold/20 flex justify-around pt-4 pb-8 z-50 overflow-x-auto no-scrollbar gap-8 px-4">
         {[
